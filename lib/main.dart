@@ -1,10 +1,11 @@
-// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, use_key_in_widget_constructors, library_private_types_in_public_api, unnecessary_string_interpolations, unreachable_switch_default, deprecated_member_use, unnecessary_to_list_in_spreads
+// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables, use_key_in_widget_constructors, library_private_types_in_public_api, unnecessary_string_interpolations, unreachable_switch_default, deprecated_member_use, unnecessary_to_list_in_spreads, depend_on_referenced_packages
+
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // <<< ВАЖНО ДЛЯ КАЛЕНДАРЯ
 import 'package:provider/provider.dart';
-import 'package:table_calendar/table_calendar.dart';
-import 'package:intl/date_symbol_data_local.dart'; // Для initializeDateFormatting
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
-import 'package:mask_text_input_formatter/mask_text_input_formatter.dart'; // <<< ДОБАВИТЬ ИМПОРТ
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'dart:collection';
 import 'dart:math';
 
@@ -12,7 +13,7 @@ import 'dart:math';
 // 1. ТОЧКА ВХОДА (MAIN)
 // ===========================================================================
 void main() async {
-  // Инициализация локализации для работы с датами, временем и валютой
+  WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ru_RU', null);
   runApp(
     ChangeNotifierProvider(
@@ -26,25 +27,22 @@ void main() async {
 // 2. МОДЕЛИ ДАННЫХ
 // ===========================================================================
 enum OrderStatus { inProgress, ready, completed }
-
-// Новый enum для типов ингредиентов
 enum IngredientType { ingredient, decoration, packaging }
 
 class Ingredient {
   String id;
   String name;
   double price;
-  double packageSize; // Вес или количество в одной упаковке (г/шт)
-  IngredientType type; // Тип ингредиента
+  double packageSize;
+  IngredientType type;
 
   Ingredient({
     required this.id,
     required this.name,
     required this.price,
     required this.packageSize,
-    this.type = IngredientType.ingredient, // По умолчанию ингредиент
+    this.type = IngredientType.ingredient,
   });
-
   double get pricePerUnit => (packageSize > 0) ? price / packageSize : 0;
 }
 
@@ -55,15 +53,14 @@ class RecipeComponent {
   RecipeComponent({required this.ingredientId, required this.quantity});
 }
 
-// НОВАЯ МОДЕЛЬ: Запись о запасе
 class InventoryItem {
-  String id; // Уникальный ID записи о запасе
-  String productId; // ID изделия
-  String productName; // Название изделия (для быстрого доступа)
-  int quantity; // Общее количество изготовленных изделий
-  int availableQuantity; // Доступное для продажи количество (может уменьшаться)
-  DateTime productionDate; // Дата изготовления
-  double unitCostAtTimeOfProduction; // Себестоимость одной единицы на момент изготовления
+  String id;
+  String productId;
+  String productName;
+  int quantity;
+  int availableQuantity;
+  DateTime productionDate;
+  double unitCostAtTimeOfProduction;
 
   InventoryItem({
     required this.id,
@@ -72,54 +69,49 @@ class InventoryItem {
     required this.quantity,
     required this.productionDate,
     required this.unitCostAtTimeOfProduction,
-    int? availableQuantity, // Если не задано, то равно общему количеству
+    int? availableQuantity,
   }) : availableQuantity = availableQuantity ?? quantity;
 }
 
 class Product {
   String id;
   String name;
-  List<RecipeComponent> ingredients; // Только ингредиенты
-  int producedQuantity; // <<< НОВОЕ ПОЛЕ: Количество изготовленных единиц
+  List<RecipeComponent> ingredients;
+  int producedQuantity;
 
   Product({
     required this.id,
     required this.name,
     this.ingredients = const [],
-    this.producedQuantity = 1, // <<< ИНИЦИАЛИЗАЦИЯ ПО УМОЛЧАНИЮ
+    this.producedQuantity = 1,
   });
 
   double getCost(List<Ingredient> allIngredients) {
     double totalCost = 0.0;
-    // Только ингредиенты входят в базовую себестоимость изделия
     for (var component in ingredients) {
       try {
-        final ingredient =
-            allIngredients.firstWhere((ing) => ing.id == component.ingredientId);
+        final ingredient = allIngredients
+            .firstWhere((ing) => ing.id == component.ingredientId);
         totalCost += ingredient.pricePerUnit * component.quantity;
       } catch (e) {
-        // Ингредиент не найден, пропускаем
+        // Ингредиент не найден
       }
     }
     return totalCost;
   }
 
-  // <<< НОВЫЙ МЕТОД: Себестоимость одной единицы изделия
   double getUnitCost(List<Ingredient> allIngredients) {
-    if (producedQuantity <= 0) return 0.0; // Защита от деления на ноль
+    if (producedQuantity <= 0) return 0.0;
     return getCost(allIngredients) / producedQuantity;
   }
 }
 
-// Новый класс для хранения информации о выбранных украшениях и упаковке в заказе
 class OrderDecorationPackagingItem {
-  String id; // Уникальный ID для каждого элемента в списке
-  String? itemId; // ID украшения или упаковки
+  String id;
+  String? itemId;
   double quantity;
-
-  // Сохраняем информацию на момент создания заказа
   String itemName;
-  double itemPriceAtTime; // Цена за единицу на момент создания заказа
+  double itemPriceAtTime;
 
   OrderDecorationPackagingItem({
     required this.id,
@@ -134,30 +126,22 @@ class Order {
   String id;
   String productId;
   String customerName;
-  String? customerPhone; // Новое поле для номера телефона
+  String? customerPhone;
   double sellingPrice;
-  int quantity; // Количество продаваемых единиц
+  int quantity;
   DateTime orderDate;
   OrderStatus status;
-
-  // Название изделия на момент создания заказа
   String productName;
-
-  // Списки украшений и упаковок с сохраненной информацией
   List<OrderDecorationPackagingItem> decorations;
   List<OrderDecorationPackagingItem> packaging;
-
-  // НОВОЕ ПОЛЕ: ID записи о запасе, из которой берутся изделия
   String? inventoryItemId;
-
-  // НОВОЕ ПОЛЕ: Себестоимость одной единицы изделия из выбранной партии на момент создания заказа
   double unitCostFromInventory;
 
   Order({
     required this.id,
     required this.productId,
     required this.customerName,
-    this.customerPhone, // Добавлено в конструктор
+    this.customerPhone,
     required this.sellingPrice,
     required this.quantity,
     required this.orderDate,
@@ -165,21 +149,17 @@ class Order {
     required this.productName,
     this.decorations = const [],
     this.packaging = const [],
-    this.inventoryItemId, // Добавлено в конструктор
-    required this.unitCostFromInventory, // Добавлено в конструктор
+    this.inventoryItemId,
+    required this.unitCostFromInventory,
   });
 
-  // Расчет полной себестоимости заказа (изделие + украшение + упаковка)
-  // ИЗМЕНЕНО: Себестоимость изделия берется из выбранной партии
   double getTotalCost(List<Ingredient> allIngredients) {
-    double total = unitCostFromInventory * quantity; // Себестоимость изделий из партии
-    // Добавляем стоимость украшений для всех изделий
+    double total = unitCostFromInventory * quantity;
     for (var decoration in decorations) {
       if (decoration.itemId != null && decoration.quantity > 0) {
         total += decoration.itemPriceAtTime * decoration.quantity * quantity;
       }
     }
-    // Добавляем стоимость упаковок для всех изделий
     for (var pack in packaging) {
       if (pack.itemId != null && pack.quantity > 0) {
         total += pack.itemPriceAtTime * pack.quantity * quantity;
@@ -188,17 +168,14 @@ class Order {
     return total;
   }
 
-  // Расчет общей цены заказа
   double getTotalPrice() {
     return sellingPrice * quantity;
   }
 
-  // Расчет прибыли
   double getProfit(List<Ingredient> allIngredients) {
     return getTotalPrice() - getTotalCost(allIngredients);
   }
 
-  // Новые методы для получения стоимости украшений и упаковки
   double getDecorationCost() {
     double total = 0.0;
     for (var decoration in decorations) {
@@ -250,58 +227,40 @@ class PastryProvider with ChangeNotifier {
         packageSize: 100,
         type: IngredientType.decoration),
     Ingredient(
-        id: 'dec2',
-        name: 'Шоколадная стружка',
-        price: 120,
-        packageSize: 50,
-        type: IngredientType.decoration),
-    Ingredient(
         id: 'pack1',
         name: 'Коробка для торта',
         price: 100,
         packageSize: 1,
         type: IngredientType.packaging),
-    Ingredient(
-        id: 'pack2',
-        name: 'Лента атласная',
-        price: 50,
-        packageSize: 1,
-        type: IngredientType.packaging),
   ];
-
   final List<Product> _products = [
     Product(
         id: 'prod1',
         name: 'Торт "Медовик"',
-        producedQuantity: 1, // <<< ИНИЦИАЛИЗАЦИЯ
+        producedQuantity: 1,
         ingredients: [
           RecipeComponent(ingredientId: 'ing1', quantity: 300),
           RecipeComponent(ingredientId: 'ing2', quantity: 200),
           RecipeComponent(ingredientId: 'ing3', quantity: 180)
         ])
   ];
-
   final List<Order> _orders = [];
-  final List<InventoryItem> _inventory = []; // НОВЫЙ СПИСОК ЗАПАСОВ
+  final List<InventoryItem> _inventory = [];
 
   UnmodifiableListView<Ingredient> get ingredients =>
       UnmodifiableListView(_ingredients);
-  UnmodifiableListView<Product> get products =>
-      UnmodifiableListView(_products);
+  UnmodifiableListView<Product> get products => UnmodifiableListView(_products);
   UnmodifiableListView<Order> get orders => UnmodifiableListView(_orders);
   UnmodifiableListView<InventoryItem> get inventory =>
-      UnmodifiableListView(_inventory); // Геттер для запасов
+      UnmodifiableListView(_inventory);
 
-  // Методы для получения ингредиентов по типу
   List<Ingredient> getIngredientsByType(IngredientType type) =>
       _ingredients.where((ing) => ing.type == type).toList();
 
-  // --- УНИКАЛЬНЫЙ ID ---
   String _generateId() =>
       DateTime.now().millisecondsSinceEpoch.toString() +
       Random().nextInt(999).toString();
 
-  // --- МЕТОДЫ ДЛЯ ИНГРЕДИЕНТОВ ---
   void addIngredient(Ingredient ingredient) {
     ingredient.id = _generateId();
     _ingredients.add(ingredient);
@@ -321,7 +280,6 @@ class PastryProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- МЕТОДЫ ДЛЯ ИЗДЕЛИЙ ---
   void addProduct(Product product) {
     product.id = _generateId();
     _products.add(product);
@@ -341,7 +299,6 @@ class PastryProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- МЕТОДЫ ДЛЯ ЗАПАСОВ ---
   void addInventoryItem(InventoryItem item) {
     item.id = _generateId();
     _inventory.add(item);
@@ -361,47 +318,52 @@ class PastryProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // <<< НОВЫЙ МЕТОД: Добавление готового изделия в запасы
-  void addProductToInventory(String productId, int quantity) {
-    final product = _products.firstWhere((p) => p.id == productId, orElse: () => throw Exception('Product not found'));
+  void addProductToInventory(
+      String productId, int quantity, DateTime productionDate) {
+    final product = _products.firstWhere((p) => p.id == productId,
+        orElse: () => throw Exception('Product not found'));
     final unitCost = product.getUnitCost(_ingredients);
 
     if (unitCost <= 0 || quantity <= 0) {
-      // Можно выбросить исключение или показать сообщение
       throw Exception('Неверные данные изделия или количество');
     }
 
-    final inventoryItem = InventoryItem(
-      id: '', // Будет установлено в addInventoryItem
-      productId: product.id,
-      productName: product.name,
-      quantity: quantity,
-      productionDate: DateTime.now(),
-      unitCostAtTimeOfProduction: unitCost,
-      availableQuantity: quantity, // Изначально все доступно
-    );
-    addInventoryItem(inventoryItem);
+    final existingIndex = _inventory.indexWhere((item) =>
+        item.productId == productId &&
+        isSameDay(item.productionDate, productionDate));
+
+    if (existingIndex != -1) {
+      _inventory[existingIndex].quantity += quantity;
+      _inventory[existingIndex].availableQuantity += quantity;
+      notifyListeners();
+    } else {
+      final inventoryItem = InventoryItem(
+        id: '',
+        productId: product.id,
+        productName: product.name,
+        quantity: quantity,
+        productionDate: productionDate,
+        unitCostAtTimeOfProduction: unitCost,
+        availableQuantity: quantity,
+      );
+      addInventoryItem(inventoryItem);
+    }
   }
 
-  // Получить список доступных запасов для конкретного изделия
   List<InventoryItem> getAvailableInventoryForProduct(String productId) =>
       _inventory
           .where((item) =>
               item.productId == productId && item.availableQuantity > 0)
           .toList();
 
-  // --- МЕТОДЫ ДЛЯ ЗАКАЗОВ ---
   void addOrder(Order order) {
     order.id = _generateId();
     _orders.add(order);
-    // НОВАЯ ЛОГИКА: Уменьшить доступное количество в запасах
     if (order.inventoryItemId != null) {
       final inventoryIndex =
           _inventory.indexWhere((inv) => inv.id == order.inventoryItemId);
       if (inventoryIndex != -1) {
         _inventory[inventoryIndex].availableQuantity -= order.quantity;
-        // Если доступное количество стало 0, можно удалить запись или оставить
-        // Для простоты оставим запись, просто с нулевым доступным количеством
       }
     }
     notifyListeners();
@@ -410,15 +372,12 @@ class PastryProvider with ChangeNotifier {
   void updateOrder(Order updatedOrder) {
     final index = _orders.indexWhere((o) => o.id == updatedOrder.id);
     if (index != -1) {
-      // Если заказ обновляется (например, изменяется количество), нужно вернуть
-      // старое количество в запасы и затем вычесть новое
       final oldOrder = _orders[index];
       if (oldOrder.inventoryItemId != null) {
         final oldInventoryIndex =
             _inventory.indexWhere((inv) => inv.id == oldOrder.inventoryItemId);
         if (oldInventoryIndex != -1) {
-          _inventory[oldInventoryIndex].availableQuantity +=
-              oldOrder.quantity;
+          _inventory[oldInventoryIndex].availableQuantity += oldOrder.quantity;
         }
       }
       _orders[index] = updatedOrder;
@@ -438,7 +397,6 @@ class PastryProvider with ChangeNotifier {
     final orderIndex = _orders.indexWhere((order) => order.id == id);
     if (orderIndex != -1) {
       final orderToDelete = _orders[orderIndex];
-      // Вернуть количество в запасы при удалении заказа
       if (orderToDelete.inventoryItemId != null) {
         final inventoryIndex = _inventory
             .indexWhere((inv) => inv.id == orderToDelete.inventoryItemId);
@@ -460,13 +418,10 @@ class PastryProvider with ChangeNotifier {
     }
   }
 
-  // --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ---
-  List<Order> getOrdersForDay(DateTime day) =>
-      _orders.where((order) => isSameDay(order.orderDate, day)).toList();
-
   Product getProductById(String id) => _products.firstWhere(
       (p) => p.id == id,
-      orElse: () => Product(id: 'not_found', name: 'Изделие удалено', producedQuantity: 0)); // <<< ДОБАВЛЕНО producedQuantity
+      orElse: () => Product(
+          id: 'not_found', name: 'Изделие удалено', producedQuantity: 0));
 
   Ingredient getIngredientById(String id) => _ingredients.firstWhere(
       (i) => i.id == id,
@@ -477,15 +432,13 @@ class PastryProvider with ChangeNotifier {
           packageSize: 0,
           type: IngredientType.ingredient));
 
-  // --- СТАТИСТИКА ---
   Map<String, double> getStatistics() {
-    // Старая статистика для совместимости (все выполненные заказы)
     final completedOrders =
         _orders.where((o) => o.status == OrderStatus.completed);
     double totalRevenue = 0, totalCost = 0;
     for (var order in completedOrders) {
       totalRevenue += order.getTotalPrice();
-      totalCost += order.getTotalCost(_ingredients); // Используем новый метод
+      totalCost += order.getTotalCost(_ingredients);
     }
     return {
       'revenue': totalRevenue,
@@ -495,31 +448,28 @@ class PastryProvider with ChangeNotifier {
     };
   }
 
-  // НОВАЯ СТАТИСТИКА ПО ПЕРИОДАМ
   Map<String, double> getStatisticsForPeriod(
       DateTime startDate, DateTime endDate) {
-    // Фильтруем выполненные заказы по периоду
     final completedOrders = _orders
         .where((o) => o.status == OrderStatus.completed)
         .where((o) =>
             (o.orderDate.isAfter(startDate) ||
                 isSameDay(o.orderDate, startDate)) &&
-            (o.orderDate.isBefore(endDate) ||
-                isSameDay(o.orderDate, endDate)))
+            (o.orderDate.isBefore(endDate) || isSameDay(o.orderDate, endDate)))
         .toList();
     double totalRevenue = 0, totalCost = 0;
-    Set<String> uniqueCustomers = {}; // Для подсчета уникальных клиентов
+    Set<String> uniqueCustomers = {};
     for (var order in completedOrders) {
       totalRevenue += order.getTotalPrice();
-      totalCost += order.getTotalCost(_ingredients); // Используем новый метод
-      uniqueCustomers.add(order.customerName); // Добавляем имя клиента в множество
+      totalCost += order.getTotalCost(_ingredients);
+      uniqueCustomers.add(order.customerName);
     }
     return {
       'revenue': totalRevenue,
       'cost': totalCost,
       'profit': totalRevenue - totalCost,
       'orderCount': completedOrders.length.toDouble(),
-      'customerCount': uniqueCustomers.length.toDouble(), // Количество уникальных клиентов
+      'customerCount': uniqueCustomers.length.toDouble(),
     };
   }
 }
@@ -532,6 +482,15 @@ class PastryProApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Кондитер Про',
+      // <<< ВАЖНО: Добавлены делегаты локализации для работы календаря
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: [
+        const Locale('ru', 'RU'),
+      ],
       theme: ThemeData(
           primarySwatch: Colors.pink,
           visualDensity: VisualDensity.adaptivePlatformDensity,
@@ -550,13 +509,9 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-
-  // Инициализируем дату по умолчанию, чтобы она никогда не была null
   DateTime _selectedDayForNewOrder = DateTime.now();
-
   void _onItemTapped(int index) => setState(() => _selectedIndex = index);
 
-  // Изменяем тип параметра на DateTime? и добавляем проверку
   void _updateSelectedDay(DateTime? day) {
     if (day != null) {
       setState(() => _selectedDayForNewOrder = day);
@@ -568,11 +523,10 @@ class _MainScreenState extends State<MainScreen> {
     final List<Widget> screens = [
       OrdersScreen(onDaySelected: _updateSelectedDay),
       ProductsScreen(),
-      IngredientsMainScreen(), // Изменено на новый экран
-      InventoryScreen(), // НОВАЯ ВКЛАДКА
+      IngredientsMainScreen(),
+      InventoryScreen(),
       StatisticsScreen(),
     ];
-
     return Scaffold(
       appBar: AppBar(
           title: Text('Кондитер Про'),
@@ -587,35 +541,31 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
               icon: Icon(Icons.list_alt), label: 'Справочник'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.inventory), label: 'Запасы'), // НОВАЯ ВКЛАДКА
+              icon: Icon(Icons.inventory), label: 'Запасы'),
           BottomNavigationBarItem(
               icon: Icon(Icons.bar_chart), label: 'Статистика'),
         ],
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
       ),
-      floatingActionButton: _selectedIndex < 4 // Показывать кнопку только на первых 4 экранах
+      floatingActionButton: _selectedIndex < 4
           ? FloatingActionButton(
               child: Icon(Icons.add),
               onPressed: () {
                 if (_selectedIndex == 0) {
-                  // Заказы
                   Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (context) => OrderEditScreen(
                               selectedDate: _selectedDayForNewOrder)));
                 } else if (_selectedIndex == 1) {
-                  // Изделия
                   Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (context) => ProductEditScreen()));
                 } else if (_selectedIndex == 2) {
-                  // Справочник - открываем выбор типа
                   _showIngredientTypeDialog(context);
                 } else if (_selectedIndex == 3) {
-                  // <<< ИЗМЕНЕНО: Запасы - теперь FAB открывает новый экран
                   Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -677,7 +627,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-// <<< НОВЫЙ ЭКРАН: Добавление изделия в запасы
+// --- ЭКРАН ДОБАВЛЕНИЯ В ЗАПАСЫ ---
 class AddToInventoryScreen extends StatefulWidget {
   @override
   _AddToInventoryScreenState createState() => _AddToInventoryScreenState();
@@ -687,6 +637,7 @@ class _AddToInventoryScreenState extends State<AddToInventoryScreen> {
   final _formKey = GlobalKey<FormState>();
   String? _selectedProductId;
   late TextEditingController _quantityController;
+  DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
@@ -700,10 +651,24 @@ class _AddToInventoryScreenState extends State<AddToInventoryScreen> {
     super.dispose();
   }
 
+  Future<void> _pickDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2101),
+      locale: const Locale('ru', 'RU'),
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context, listen: false);
-
     return Scaffold(
       appBar: AppBar(title: Text('Добавить в запасы')),
       body: Padding(
@@ -713,47 +678,66 @@ class _AddToInventoryScreenState extends State<AddToInventoryScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Выберите изделие:', style: Theme.of(context).textTheme.titleMedium),
+              Text('Выберите изделие:',
+                  style: Theme.of(context).textTheme.titleMedium),
               SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 isExpanded: true,
                 decoration: InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'Изделие'
-                ),
+                    border: OutlineInputBorder(), labelText: 'Изделие'),
                 value: _selectedProductId,
                 items: provider.products
                     .map((product) => DropdownMenuItem(
                         value: product.id, child: Text(product.name)))
                     .toList(),
-                onChanged: (value) => setState(() => _selectedProductId = value),
-                validator: (value) => value == null ? 'Выберите изделие' : null,
+                onChanged: (value) =>
+                    setState(() => _selectedProductId = value),
+                validator: (value) =>
+                    value == null ? 'Выберите изделие' : null,
               ),
               SizedBox(height: 16),
-              Text('Введите количество:', style: Theme.of(context).textTheme.titleMedium),
+              Text('Дата изготовления:',
+                  style: Theme.of(context).textTheme.titleMedium),
+              SizedBox(height: 8),
+              InkWell(
+                onTap: () => _pickDate(context),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(DateFormat.yMd('ru_RU').format(_selectedDate),
+                      style: TextStyle(fontSize: 16)),
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('Введите количество:',
+                  style: Theme.of(context).textTheme.titleMedium),
               SizedBox(height: 8),
               TextFormField(
                 controller: _quantityController,
                 decoration: InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'Количество'
-                ),
+                    border: OutlineInputBorder(), labelText: 'Количество'),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) return 'Введите количество';
+                  if (value == null || value.isEmpty)
+                    return 'Введите количество';
                   final quantity = int.tryParse(value);
-                  if (quantity == null || quantity <= 0) return 'Количество должно быть больше 0';
+                  if (quantity == null || quantity <= 0)
+                    return 'Количество должно быть больше 0';
                   return null;
                 },
               ),
               SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () {
-                  if (_formKey.currentState!.validate() && _selectedProductId != null) {
+                  if (_formKey.currentState!.validate() &&
+                      _selectedProductId != null) {
                     try {
                       final quantity = int.parse(_quantityController.text);
-                      provider.addProductToInventory(_selectedProductId!, quantity);
-                      Navigator.pop(context); // Закрываем экран
+                      provider.addProductToInventory(
+                          _selectedProductId!, quantity, _selectedDate);
+                      Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Изделие добавлено в запасы')),
                       );
@@ -774,7 +758,7 @@ class _AddToInventoryScreenState extends State<AddToInventoryScreen> {
   }
 }
 
-// --- ЭКРАН ЗАКАЗОВ (ОБНОВЛЕННЫЙ) ---
+// --- ЭКРАН ЗАКАЗОВ ---
 class OrdersScreen extends StatefulWidget {
   final Function(DateTime?) onDaySelected;
   const OrdersScreen({required this.onDaySelected});
@@ -784,111 +768,128 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
-  DateTime _focusedDay = DateTime.now();
-  DateTime? _selectedDay;
-  OrderStatus? _selectedStatusFilter; // Фильтр по статусу
+  DateTime _selectedDay = DateTime.now();
+  OrderStatus? _selectedStatusFilter;
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = _focusedDay;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        widget.onDaySelected(_selectedDay!);
+        widget.onDaySelected(_selectedDay);
       }
     });
+  }
+
+  void _previousDay() {
+    setState(() {
+      _selectedDay = _selectedDay.subtract(Duration(days: 1));
+      widget.onDaySelected(_selectedDay);
+    });
+  }
+
+  void _nextDay() {
+    setState(() {
+      _selectedDay = _selectedDay.add(Duration(days: 1));
+      widget.onDaySelected(_selectedDay);
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDay,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2101),
+      locale: Locale('ru', 'RU'),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDay = picked;
+        widget.onDaySelected(_selectedDay);
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
-
-    // ИСПРАВЛЕНИЕ 1: Создаем изменяемую копию неизменяемого списка
     final List<Order> allOrders = List.from(provider.orders);
-
-    // 1. Фильтрация по статусу (если выбран)
-    // ИСПРАВЛЕНИЕ 2: Всегда начинаем с изменяемой копии
     List<Order> filteredOrders = List.from(allOrders);
+
     if (_selectedStatusFilter != null) {
-      filteredOrders = filteredOrders // ИСПРАВЛЕНИЕ 3: Фильтруем изменяемую копию
+      filteredOrders = filteredOrders
           .where((order) => order.status == _selectedStatusFilter)
           .toList();
     }
 
-    // 2. Фильтрация по дате (если выбрана дата)
-    // ИСПРАВЛЕНИЕ: Фильтрация по дате применяется только если дата выбрана и статус не установлен
-    if (_selectedDay != null && _selectedStatusFilter == null) {
-      filteredOrders = filteredOrders
-          .where((order) => isSameDay(order.orderDate, _selectedDay))
-          .toList();
-    }
+    filteredOrders = filteredOrders
+        .where((order) => isSameDay(order.orderDate, _selectedDay))
+        .toList();
 
-    // 2. Сортировка по дате (от новых к старым)
-    // ИСПРАВЛЕНИЕ 4: Теперь это безопасно
     filteredOrders.sort((a, b) => b.orderDate.compareTo(a.orderDate));
 
     return Column(
       children: [
-        // Календарь
-        TableCalendar(
-          firstDay: DateTime.utc(2020, 1, 1),
-          lastDay: DateTime.utc(2030, 12, 31),
-          focusedDay: _focusedDay,
-          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-          onDaySelected: (selectedDay, focusedDay) {
-            setState(() {
-              _selectedDay = selectedDay;
-              _focusedDay = focusedDay;
-              widget.onDaySelected(selectedDay);
-            });
-          },
-          calendarStyle: CalendarStyle(
-            todayDecoration: BoxDecoration(
-                color: Colors.pink.shade100, shape: BoxShape.circle),
-            selectedDecoration: BoxDecoration(
-                color: Theme.of(context).primaryColor, shape: BoxShape.circle),
+        Container(
+          padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          color: Theme.of(context).cardColor,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildStatusChip(null, 'Все'),
+                SizedBox(width: 8),
+                _buildStatusChip(OrderStatus.inProgress, 'В работе'),
+                SizedBox(width: 8),
+                _buildStatusChip(OrderStatus.ready, 'Готов'),
+                SizedBox(width: 8),
+                _buildStatusChip(OrderStatus.completed, 'Выдан'),
+              ],
+            ),
           ),
-          eventLoader: (day) => provider.getOrdersForDay(day),
-          locale: 'ru_RU',
-          // Убираем кнопку "2 weeks"
-          availableCalendarFormats: const {CalendarFormat.month: 'Месяц'},
-          calendarFormat: CalendarFormat.month,
         ),
-        const Divider(),
-        // Выпадающий список для фильтрации по статусу
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        Divider(height: 1),
+        Container(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          color: Colors.grey.shade50,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Фильтр по статусу:',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              DropdownButton<OrderStatus?>(
-                hint: Text('Все'),
-                value: _selectedStatusFilter,
-                items: [
-                  DropdownMenuItem(value: null, child: Text('Все')),
-                  ...OrderStatus.values.map((status) => DropdownMenuItem(
-                        value: status,
-                        child: Text(_getStatusText(status)),
-                      )),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedStatusFilter = value;
-                  });
-                },
+              IconButton(
+                icon: Icon(Icons.chevron_left),
+                onPressed: _previousDay,
+              ),
+              InkWell(
+                onTap: _pickDate,
+                child: Row(
+                  children: [
+                    Icon(Icons.calendar_month,
+                        size: 20, color: Theme.of(context).primaryColor),
+                    SizedBox(width: 8),
+                    Text(
+                      DateFormat('d MMMM yyyy', 'ru_RU').format(_selectedDay),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.chevron_right),
+                onPressed: _nextDay,
               ),
             ],
           ),
         ),
-        SizedBox(height: 8),
+        Divider(height: 1),
         Expanded(
           child: filteredOrders.isEmpty
               ? Center(
-                  child: Text('Заказы не найдены',
-                      style: TextStyle(color: Colors.grey)))
+                  child: Text('Нет заказов на этот день',
+                      style: TextStyle(color: Colors.grey, fontSize: 16)))
               : ListView.builder(
+                  padding: EdgeInsets.only(bottom: 80),
                   itemCount: filteredOrders.length,
                   itemBuilder: (context, index) {
                     final order = filteredOrders[index];
@@ -901,32 +902,290 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  String _getStatusText(OrderStatus status) {
-    switch (status) {
-      case OrderStatus.inProgress:
-        return 'В работе';
-      case OrderStatus.ready:
-        return 'Готов';
-      case OrderStatus.completed:
-        return 'Выдан';
-      default:
-        return 'Неизвестно';
-    }
+  Widget _buildStatusChip(OrderStatus? status, String label) {
+    final isSelected = _selectedStatusFilter == status;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (bool selected) {
+        setState(() {
+          _selectedStatusFilter = selected ? status : null;
+        });
+      },
+      selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
+      labelStyle: TextStyle(
+          color: isSelected ? Theme.of(context).primaryColor : Colors.black),
+    );
   }
 }
 
-// --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ СРАВНЕНИЯ ДАТ ---
 bool isSameDay(DateTime? a, DateTime? b) {
   if (a == null || b == null) return false;
   return a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
-// --- ЭКРАН ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ ЗАКАЗА ---
+// --- КАРТОЧКА ЗАКАЗА (ОБНОВЛЕННАЯ) ---
+class OrderCard extends StatelessWidget {
+  final Order order;
+  final Product product;
+  const OrderCard({required this.order, required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<PastryProvider>(context, listen: false);
+    final currencyFormat = NumberFormat.currency(locale: 'ru_RU', symbol: '₽');
+
+    String displayProductName;
+    if (product.id == 'not_found') {
+      displayProductName =
+          order.productName.isNotEmpty ? order.productName : 'Изделие удалено';
+    } else {
+      displayProductName = product.name;
+    }
+
+    final totalCost = order.getTotalCost(provider.ingredients);
+    final totalPrice = order.getTotalPrice();
+    final profit = order.getProfit(provider.ingredients);
+    final decorationCost = order.getDecorationCost();
+    final packagingCost = order.getPackagingCost();
+
+    Color getStatusColor(OrderStatus status) {
+      switch (status) {
+        case OrderStatus.inProgress:
+          return Colors.red;
+        case OrderStatus.ready:
+          return Colors.amber;
+        case OrderStatus.completed:
+          return Colors.green;
+        default:
+          return Colors.grey;
+      }
+    }
+
+    IconData getStatusIcon(OrderStatus status) {
+      switch (status) {
+        case OrderStatus.inProgress:
+          return Icons.access_time;
+        case OrderStatus.ready:
+          return Icons.check_circle;
+        case OrderStatus.completed:
+          return Icons.done_all;
+        default:
+          return Icons.help;
+      }
+    }
+
+    String getStatusText(OrderStatus status) {
+      switch (status) {
+        case OrderStatus.inProgress:
+          return 'В работе';
+        case OrderStatus.ready:
+          return 'Готов';
+        case OrderStatus.completed:
+          return 'Выдан';
+        default:
+          return 'Неизвестно';
+      }
+    }
+
+    return Card(
+        margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: InkWell(
+          onTap: () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) =>
+                        OrderEditScreen(initialOrder: order)));
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // <<< КНОПКИ СТАТУСА ТЕПЕРЬ СВЕРХУ
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                            tooltip: 'В работе',
+                            icon: Icon(Icons.access_time),
+                            color: order.status == OrderStatus.inProgress
+                                ? Colors.red
+                                : Colors.grey.shade300,
+                            onPressed: () => provider.updateOrderStatus(
+                                order.id, OrderStatus.inProgress)),
+                        IconButton(
+                            tooltip: 'Готов',
+                            icon: Icon(Icons.check_circle),
+                            color: order.status == OrderStatus.ready
+                                ? Colors.amber
+                                : Colors.grey.shade300,
+                            onPressed: () => provider.updateOrderStatus(
+                                order.id, OrderStatus.ready)),
+                        IconButton(
+                            tooltip: 'Выдан',
+                            icon: Icon(Icons.done_all),
+                            color: order.status == OrderStatus.completed
+                                ? Colors.green
+                                : Colors.grey.shade300,
+                            onPressed: () => provider.updateOrderStatus(
+                                order.id, OrderStatus.completed)),
+                      ],
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete, color: Colors.red.shade400),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return AlertDialog(
+                              title: Text('Подтвердите удаление'),
+                              content: Text(
+                                  'Удалить заказ для "$displayProductName"?'),
+                              actions: <Widget>[
+                                TextButton(
+                                  child: Text('Отмена'),
+                                  onPressed: () => Navigator.of(context).pop(),
+                                ),
+                                TextButton(
+                                  child: Text('Удалить'),
+                                  onPressed: () {
+                                    provider.deleteOrder(order.id);
+                                    Navigator.of(context).pop();
+                                  },
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(displayProductName,
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: getStatusColor(order.status).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(getStatusIcon(order.status),
+                              color: getStatusColor(order.status), size: 16),
+                          SizedBox(width: 4),
+                          Text(getStatusText(order.status),
+                              style: TextStyle(
+                                  color: getStatusColor(order.status),
+                                  fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Text('Заказчик: ${order.customerName}'),
+                if (order.customerPhone != null &&
+                    order.customerPhone!.isNotEmpty)
+                  Text('Телефон: ${order.customerPhone}'),
+                SizedBox(height: 4),
+                Text(
+                    'Цена за единицу: ${currencyFormat.format(order.sellingPrice)}'),
+                SizedBox(height: 4),
+                Text('Количество: ${order.quantity}'),
+                if (order.inventoryItemId != null)
+                  FutureBuilder<InventoryItem?>(
+                    future: () async {
+                      try {
+                        return provider.inventory.firstWhere(
+                            (inv) => inv.id == order.inventoryItemId);
+                      } catch (e) {
+                        return null;
+                      }
+                    }(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.done &&
+                          snapshot.hasData) {
+                        final inventoryItem = snapshot.data!;
+                        return Text(
+                            'Партия: ${DateFormat.yMd('ru_RU').format(inventoryItem.productionDate)}',
+                            style: TextStyle(color: Colors.blueGrey));
+                      }
+                      return SizedBox();
+                    },
+                  ),
+                SizedBox(height: 4),
+                Text('Общая цена: ${currencyFormat.format(totalPrice)}',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                if (order.decorations.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Украшения:',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          ...order.decorations.map((d) =>
+                              Text('  ${d.itemName} (${d.quantity} г/шт)')),
+                        ]),
+                  ),
+                if (order.packaging.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Упаковка:',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          ...order.packaging.map((p) =>
+                              Text('  ${p.itemName} (${p.quantity} шт)')),
+                        ]),
+                  ),
+                SizedBox(height: 8),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          'Себестоимость: ${currencyFormat.format(totalCost)}'),
+                      Text(
+                          'Прибыль: ${currencyFormat.format(profit)}',
+                          style: TextStyle(
+                              color: profit >= 0 ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ));
+  }
+}
+
+// --- ЭКРАН РЕДАКТИРОВАНИЯ ЗАКАЗА ---
 class OrderEditScreen extends StatefulWidget {
   final DateTime? selectedDate;
   final Order? initialOrder;
   const OrderEditScreen({this.selectedDate, this.initialOrder});
-
   @override
   _OrderEditScreenState createState() => _OrderEditScreenState();
 }
@@ -935,26 +1194,20 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   final _formKey = GlobalKey<FormState>();
   String? _selectedProductId;
   late TextEditingController _customerNameController;
-  late TextEditingController _customerPhoneController; // Новый контроллер для телефона
-  final MaskTextInputFormatter _phoneMaskFormatter =
-      MaskTextInputFormatter( // <<< НОВЫЙ ФОРМАТТЕР
-          mask: '+7 (###) ###-##-##',
-          filter: {"#": RegExp(r'[0-9]')},
-          type: MaskAutoCompletionType.lazy);
+  late TextEditingController _customerPhoneController;
+  final MaskTextInputFormatter _phoneMaskFormatter = MaskTextInputFormatter(
+      mask: '+7 (###) ###-##-##',
+      filter: {"#": RegExp(r'[0-9]')},
+      type: MaskAutoCompletionType.lazy);
   late TextEditingController _sellingPriceController;
-  late TextEditingController _quantityController; // Количество продаваемых единиц
+  late TextEditingController _quantityController;
 
-  // НОВАЯ ПЕРЕМЕННАЯ: для выбора партии из запасов
   String? _selectedInventoryItemId;
-
-  // Списки для украшений и упаковок
   List<OrderDecorationPackagingItem> _decorations = [];
   List<OrderDecorationPackagingItem> _packaging = [];
-
   bool get _isEditing => widget.initialOrder != null;
 
   final currencyFormat = NumberFormat.currency(locale: 'ru_RU', symbol: '₽');
-
   @override
   void initState() {
     super.initState();
@@ -963,18 +1216,14 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
         TextEditingController(text: widget.initialOrder?.customerName ?? '');
     _customerPhoneController = TextEditingController(
         text: widget.initialOrder?.customerPhone != null
-            ? _phoneMaskFormatter.maskText(
-                widget.initialOrder!.customerPhone!) // Применяем маску к существующему значению
-            : ''); // Инициализация телефона с форматтером
+            ? _phoneMaskFormatter
+                .maskText(widget.initialOrder!.customerPhone!)
+            : '');
     _sellingPriceController = TextEditingController(
         text: widget.initialOrder?.sellingPrice.toString() ?? '');
     _quantityController = TextEditingController(
         text: widget.initialOrder?.quantity.toString() ?? '1');
-
-    // Инициализация выбранной партии из запасов
     _selectedInventoryItemId = widget.initialOrder?.inventoryItemId;
-
-    // Инициализация значений для украшений и упаковок
     if (_isEditing) {
       _decorations = List.from(widget.initialOrder!.decorations);
       _packaging = List.from(widget.initialOrder!.packaging);
@@ -984,13 +1233,12 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   @override
   void dispose() {
     _customerNameController.dispose();
-    _customerPhoneController.dispose(); // Освобождение ресурсов
+    _customerPhoneController.dispose();
     _sellingPriceController.dispose();
     _quantityController.dispose();
     super.dispose();
   }
 
-  // Методы для добавления/удаления украшений и упаковок
   void _addDecoration(PastryProvider provider) async {
     final result = await showDialog<OrderDecorationPackagingItem>(
         context: context,
@@ -1034,30 +1282,25 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context, listen: false);
-
-    // Получаем текущую себестоимость и прибыль
     double unitPrice = 0;
-    double unitCost = 0; // Себестоимость одной единицы из выбранной партии
+    double unitCost = 0;
     int quantity = 1;
     double totalPrice = 0;
     double totalCost = 0;
     double profit = 0;
     double decorationCost = 0;
     double packagingCost = 0;
-
-    // Получаем доступные запасы для выбранного изделия
     List<InventoryItem> availableInventory = [];
     if (_selectedProductId != null) {
       availableInventory =
           provider.getAvailableInventoryForProduct(_selectedProductId!);
-      // Если выбрана партия, получаем её себестоимость
       if (_selectedInventoryItemId != null) {
         try {
           final selectedInventoryItem = provider.inventory
               .firstWhere((item) => item.id == _selectedInventoryItemId);
           unitCost = selectedInventoryItem.unitCostAtTimeOfProduction;
         } catch (e) {
-          // Партия не найдена, оставляем unitCost = 0
+          // Партия не найдена
         }
       }
     }
@@ -1070,17 +1313,17 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
     }
 
     totalPrice = unitPrice * quantity;
-    totalCost = unitCost * quantity; // Себестоимость изделий
+    totalCost = unitCost * quantity;
     for (var decoration in _decorations) {
       totalCost += decoration.itemPriceAtTime * decoration.quantity * quantity;
-      decorationCost += decoration.itemPriceAtTime * decoration.quantity * quantity;
+      decorationCost +=
+          decoration.itemPriceAtTime * decoration.quantity * quantity;
     }
     for (var pack in _packaging) {
       totalCost += pack.itemPriceAtTime * pack.quantity * quantity;
       packagingCost += pack.itemPriceAtTime * pack.quantity * quantity;
     }
     profit = totalPrice - totalCost;
-
     return Scaffold(
       appBar: AppBar(
           title: Text(_isEditing ? 'Редактировать заказ' : 'Новый заказ')),
@@ -1093,7 +1336,8 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
               DropdownButtonFormField<String>(
                 initialValue: _selectedProductId,
                 decoration: InputDecoration(
-                    labelText: 'Выберите изделие', border: OutlineInputBorder()),
+                    labelText: 'Выберите изделие',
+                    border: OutlineInputBorder()),
                 items: provider.products
                     .map((product) => DropdownMenuItem(
                         value: product.id, child: Text(product.name)))
@@ -1101,15 +1345,13 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                 onChanged: (value) {
                   setState(() {
                     _selectedProductId = value;
-                    // Сбросить выбранную партию при смене изделия
                     _selectedInventoryItemId = null;
                   });
                 },
-                validator: (value) => value == null ? 'Выберите изделие' : null,
+                validator: (value) =>
+                    value == null ? 'Выберите изделие' : null,
               ),
               SizedBox(height: 16),
-
-              // НОВОЕ ПОЛЕ: Выбор партии из запасов
               if (_selectedProductId != null)
                 DropdownButtonFormField<String?>(
                   initialValue: _selectedInventoryItemId,
@@ -1117,7 +1359,8 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                       labelText: 'Партия из запасов',
                       border: OutlineInputBorder()),
                   items: [
-                    DropdownMenuItem(value: null, child: Text('Выберите партию')),
+                    DropdownMenuItem(
+                        value: null, child: Text('Выберите партию')),
                     ...availableInventory.map((item) => DropdownMenuItem(
                           value: item.id,
                           child: Text(
@@ -1126,7 +1369,6 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                   ],
                   onChanged: (value) => setState(() {
                     _selectedInventoryItemId = value;
-                    // При изменении партии пересчитываем себестоимость
                     setState(() {});
                   }),
                   validator: (value) =>
@@ -1141,59 +1383,58 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                       value!.isEmpty ? 'Введите имя' : null),
               SizedBox(height: 16),
               TextFormField(
-                  controller: _customerPhoneController, // Поле для телефона
-                  decoration: InputDecoration(
-                      labelText: 'Телефон клиента (необязательно)',
-                      border: OutlineInputBorder()),
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [_phoneMaskFormatter], // <<< ПРИМЕНЕНИЕ ФОРМАТТЕРА
+                controller: _customerPhoneController,
+                decoration: InputDecoration(
+                    labelText: 'Телефон клиента (необязательно)',
+                    border: OutlineInputBorder()),
+                keyboardType: TextInputType.phone,
+                inputFormatters: [_phoneMaskFormatter],
               ),
               SizedBox(height: 16),
               TextFormField(
-                  controller: _sellingPriceController,
-                  decoration: InputDecoration(
-                      labelText: 'Цена за единицу, ₽',
-                      border: OutlineInputBorder()),
-                  keyboardType: TextInputType.number,
-                  validator: (value) => value!.isEmpty ? 'Введите цену' : null,
-                  onChanged: (value) => setState(() {}), // Перерисовываем для обновления итогов
+                controller: _sellingPriceController,
+                decoration: InputDecoration(
+                    labelText: 'Цена за единицу, ₽',
+                    border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+                validator: (value) =>
+                    value!.isEmpty ? 'Введите цену' : null,
+                onChanged: (value) => setState(() {}),
               ),
               SizedBox(height: 16),
               TextFormField(
-                  controller: _quantityController,
-                  decoration: InputDecoration(
-                      labelText: 'Количество (продаваемых единиц)',
-                      border: OutlineInputBorder()),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value!.isEmpty) return 'Введите количество';
-                    final quantity = int.tryParse(value);
-                    if (quantity == null || quantity <= 0) {
-                      return 'Количество должно быть больше 0';
+                controller: _quantityController,
+                decoration: InputDecoration(
+                    labelText: 'Количество (продаваемых единиц)',
+                    border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value!.isEmpty) return 'Введите количество';
+                  final quantity = int.tryParse(value);
+                  if (quantity == null || quantity <= 0) {
+                    return 'Количество должно быть больше 0';
+                  }
+                  if (_selectedInventoryItemId != null) {
+                    final selectedInventory = provider.inventory.firstWhere(
+                        (inv) => inv.id == _selectedInventoryItemId,
+                        orElse: () => InventoryItem(
+                            id: '',
+                            productId: '',
+                            productName: '',
+                            quantity: 0,
+                            productionDate: DateTime.now(),
+                            unitCostAtTimeOfProduction: 0));
+                    if (quantity > selectedInventory.availableQuantity) {
+                      return 'Недостаточно изделий в выбранной партии (${selectedInventory.availableQuantity} шт)';
                     }
-                    // НОВАЯ ВАЛИДАЦИЯ: Проверка наличия в выбранной партии
-                    if (_selectedInventoryItemId != null) {
-                      final selectedInventory = provider.inventory.firstWhere(
-                          (inv) => inv.id == _selectedInventoryItemId,
-                          orElse: () => InventoryItem(
-                              id: '',
-                              productId: '',
-                              productName: '',
-                              quantity: 0,
-                              productionDate: DateTime.now(),
-                              unitCostAtTimeOfProduction: 0));
-                      if (quantity > selectedInventory.availableQuantity) {
-                        return 'Недостаточно изделий в выбранной партии (${selectedInventory.availableQuantity} шт)';
-                      }
-                    }
-                    return null;
-                  },
-                  onChanged: (value) => setState(() {}), // Перерисовываем для обновления итогов
+                  }
+                  return null;
+                },
+                onChanged: (value) => setState(() {}),
               ),
               SizedBox(height: 20),
-
-              // Отображение себестоимости и прибыли
-              if (_selectedProductId != null && _selectedInventoryItemId != null)
+              if (_selectedProductId != null &&
+                  _selectedInventoryItemId != null)
                 Card(
                   color: Colors.grey.shade100,
                   child: Padding(
@@ -1221,16 +1462,16 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                             'Стоимость упаковки: ${currencyFormat.format(packagingCost)}'),
                         Text('Прибыль: ${currencyFormat.format(profit)}',
                             style: TextStyle(
-                                color: profit >= 0 ? Colors.green : Colors.red,
+                                color:
+                                    profit >= 0 ? Colors.green : Colors.red,
                                 fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
                 ),
               SizedBox(height: 20),
-
-              // Выбор украшений
-              Text('Украшения', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Украшения',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               ..._decorations.asMap().entries.map((entry) {
                 int idx = entry.key;
                 OrderDecorationPackagingItem item = entry.value;
@@ -1263,8 +1504,6 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                 label: Text('Добавить украшение'),
               ),
               SizedBox(height: 16),
-
-              // Выбор упаковки
               Text('Упаковка', style: TextStyle(fontWeight: FontWeight.bold)),
               ..._packaging.asMap().entries.map((entry) {
                 int idx = entry.key;
@@ -1304,19 +1543,16 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                 child: Text('Сохранить'),
                 onPressed: () {
                   if (_formKey.currentState!.validate()) {
-                    // Проверяем, что изделие и партия выбраны
                     if (_selectedProductId == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Ошибка: изделие не выбрано')));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('Ошибка: изделие не выбрано')));
                       return;
                     }
                     if (_selectedInventoryItemId == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Ошибка: партия не выбрана')));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('Ошибка: партия не выбрана')));
                       return;
                     }
-
-                    // Получаем себестоимость единицы из выбранной партии
                     double unitCostFromInventory = 0;
                     try {
                       final selectedInventoryItem = provider.inventory
@@ -1326,21 +1562,16 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                           selectedInventoryItem.unitCostAtTimeOfProduction;
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content:
-                              Text('Ошибка: не удалось получить себестоимость из партии')));
+                          content: Text(
+                              'Ошибка: не удалось получить себестоимость из партии')));
                       return;
                     }
-
-                    // Безопасно определяем дату заказа
                     DateTime orderDateToUse;
                     if (_isEditing) {
                       orderDateToUse = widget.initialOrder!.orderDate;
                     } else {
-                      // При создании нового заказа selectedDate ДОЛЖЕН быть передан
                       if (widget.selectedDate == null) {
-                        // Если по какой-то причине он null, используем текущую дату и покажем предупреждение
                         orderDateToUse = DateTime.now();
-                        // Можно показать пользователю уведомление
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text(
                                 'Дата заказа не указана, используется текущая дата.')));
@@ -1348,38 +1579,30 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                         orderDateToUse = widget.selectedDate!;
                       }
                     }
-
-                    // Получаем изделие для названия
                     final productForName =
                         provider.getProductById(_selectedProductId!);
-                    final productNameToSave = productForName.name; // Сохраняем название
-
+                    final productNameToSave = productForName.name;
                     final order = Order(
                       id: _isEditing ? widget.initialOrder!.id : '',
-                      productId: _selectedProductId!, // Проверено выше
+                      productId: _selectedProductId!,
                       customerName: _customerNameController.text,
                       customerPhone: _customerPhoneController.text.isEmpty
                           ? null
-                          : _customerPhoneController.text, // Сохранение телефона
+                          : _customerPhoneController.text,
                       sellingPrice: unitPrice,
                       quantity: quantity,
-                      orderDate: orderDateToUse, // Используем безопасно определенную дату
+                      orderDate: orderDateToUse,
                       status: _isEditing
                           ? widget.initialOrder!.status
                           : OrderStatus.inProgress,
-                      // Сохраняем название изделия на момент создания заказа
                       productName: _isEditing
                           ? widget.initialOrder!.productName
                           : productNameToSave,
-                      // Сохраняем информацию об украшениях и упаковке
                       decorations: _decorations,
                       packaging: _packaging,
-                      // НОВОЕ ПОЛЕ: Сохраняем выбранную партию
                       inventoryItemId: _selectedInventoryItemId,
-                      // НОВОЕ ПОЛЕ: Сохраняем себестоимость единицы из партии
                       unitCostFromInventory: unitCostFromInventory,
                     );
-
                     if (_isEditing) {
                       provider.updateOrder(order);
                     } else {
@@ -1402,7 +1625,6 @@ class ProductsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
-
     return provider.products.isEmpty
         ? Center(
             child: Text(
@@ -1415,7 +1637,7 @@ class ProductsScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final product = provider.products[index];
               final cost = product.getCost(provider.ingredients);
-              final unitCost = product.getUnitCost(provider.ingredients); // <<< СЕБЕСТОИМОСТЬ ЕДИНИЦЫ
+              final unitCost = product.getUnitCost(provider.ingredients);
               return Card(
                   elevation: 2,
                   margin: EdgeInsets.symmetric(vertical: 8),
@@ -1428,18 +1650,19 @@ class ProductsScreen extends StatelessWidget {
                         Text(
                             'Себестоимость (общая): ${cost.toStringAsFixed(2)} ₽'),
                         Text(
-                            'Себестоимость (единица): ${unitCost.toStringAsFixed(2)} ₽'), // <<< ОТОБРАЖЕНИЕ
-                        Text('Изготовлено: ${product.producedQuantity} шт'), // <<< ОТОБРАЖЕНИЕ
+                            'Себестоимость (единица): ${unitCost.toStringAsFixed(2)} ₽'),
+                        Text('Изготовлено: ${product.producedQuantity} шт'),
                       ],
                     ),
                     trailing: Wrap(
-                      spacing: 8, // Небольшое расстояние между кнопками
+                      spacing: 8,
                       children: [
                         IconButton(
                           icon: Icon(Icons.inventory,
                               color: Colors.blue.shade600),
                           tooltip: 'Добавить в запасы',
-                          onPressed: () => _addToInventory(context, product, provider), // <<< НОВАЯ КНОПКА
+                          onPressed: () => _addToInventoryDialog(
+                              context, product, provider),
                         ),
                         IconButton(
                           icon: Icon(Icons.edit, color: Colors.grey.shade600),
@@ -1452,29 +1675,25 @@ class ProductsScreen extends StatelessWidget {
                         IconButton(
                           icon: Icon(Icons.delete, color: Colors.red.shade400),
                           onPressed: () {
-                            // Диалог подтверждения удаления
                             showDialog(
                               context: context,
                               builder: (BuildContext context) {
                                 return AlertDialog(
                                   title: Text('Подтвердите удаление'),
                                   content: Text(
-                                      'Вы уверены, что хотите удалить изделие "${product.name}"?'),
+                                      'Удалить изделие "${product.name}"?'),
                                   actions: <Widget>[
                                     TextButton(
                                       child: Text('Отмена'),
                                       onPressed: () {
-                                        Navigator.of(context)
-                                            .pop(); // Закрываем диалог
+                                        Navigator.of(context).pop();
                                       },
                                     ),
                                     TextButton(
                                       child: Text('Удалить'),
                                       onPressed: () {
                                         provider.deleteProduct(product.id);
-                                        Navigator.of(context)
-                                            .pop(); // Закрываем диалог
-                                        // Показываем уведомление
+                                        Navigator.of(context).pop();
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(
@@ -1498,35 +1717,99 @@ class ProductsScreen extends StatelessWidget {
           );
   }
 
-  // <<< НОВЫЙ МЕТОД: Добавление в запасы
-  void _addToInventory(BuildContext context, Product product, PastryProvider provider) {
-    final unitCost = product.getUnitCost(provider.ingredients);
-    if (unitCost <= 0 || product.producedQuantity <= 0) {
+  void _addToInventoryDialog(
+      BuildContext context, Product product, PastryProvider provider) {
+    if (product.producedQuantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка: Неверные данные изделия')));
+          SnackBar(content: Text('Ошибка: Неверное количество изделия')));
       return;
     }
-    final inventoryItem = InventoryItem(
-      id: '', // Будет установлено в addInventoryItem
-      productId: product.id,
-      productName: product.name,
-      quantity: product.producedQuantity,
-      productionDate: DateTime.now(),
-      unitCostAtTimeOfProduction: unitCost,
-      availableQuantity: product.producedQuantity, // Изначально все доступно
+
+    DateTime selectedDate = DateTime.now();
+    TextEditingController quantityController =
+        TextEditingController(text: product.producedQuantity.toString());
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Добавить в запасы'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Изделие: ${product.name}'),
+                  SizedBox(height: 10),
+                  TextField(
+                    controller: quantityController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                        labelText: 'Количество', border: OutlineInputBorder()),
+                  ),
+                  SizedBox(height: 10),
+                  InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2101),
+                        locale: Locale('ru', 'RU'),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          selectedDate = picked;
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Дата изготовления',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.calendar_today),
+                      ),
+                      child: Text(DateFormat.yMd('ru_RU').format(selectedDate)),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Отмена')),
+                ElevatedButton(
+                  onPressed: () {
+                    final qty = int.tryParse(quantityController.text);
+                    if (qty != null && qty > 0) {
+                      try {
+                        provider.addProductToInventory(
+                            product.id, qty, selectedDate);
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(
+                                'Добавлено в запасы: ${product.name} ($qty шт)')));
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text('Ошибка: ${e.toString()}')));
+                      }
+                    }
+                  },
+                  child: Text('Добавить'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
-    provider.addInventoryItem(inventoryItem);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            'Добавлено в запасы: ${product.name} (${product.producedQuantity} шт)')));
   }
 }
 
-// --- ЭКРАН ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ ИЗДЕЛИЯ ---
+// --- ЭКРАН РЕДАКТИРОВАНИЯ ИЗДЕЛИЯ ---
 class ProductEditScreen extends StatefulWidget {
   final Product? initialProduct;
   const ProductEditScreen({this.initialProduct});
-
   @override
   _ProductEditScreenState createState() => _ProductEditScreenState();
 }
@@ -1534,19 +1817,17 @@ class ProductEditScreen extends StatefulWidget {
 class _ProductEditScreenState extends State<ProductEditScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
-  late TextEditingController _producedQuantityController; // <<< НОВЫЙ КОНТРОЛЛЕР
+  late TextEditingController _producedQuantityController;
   late List<RecipeComponent> _ingredients;
 
   bool get _isEditing => widget.initialProduct != null;
-
   @override
   void initState() {
     super.initState();
     _nameController =
         TextEditingController(text: widget.initialProduct?.name ?? '');
     _producedQuantityController = TextEditingController(
-        text: widget.initialProduct?.producedQuantity.toString() ??
-            '1'); // <<< ИНИЦИАЛИЗАЦИЯ
+        text: widget.initialProduct?.producedQuantity.toString() ?? '1');
     _ingredients = widget.initialProduct?.ingredients
             .map((c) => RecipeComponent(
                 ingredientId: c.ingredientId, quantity: c.quantity))
@@ -1557,7 +1838,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _producedQuantityController.dispose(); // <<< ОСВОБОЖДЕНИЕ
+    _producedQuantityController.dispose();
     super.dispose();
   }
 
@@ -1594,7 +1875,6 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
       ...components.asMap().entries.map((entry) {
         int idx = entry.key;
         RecipeComponent c = entry.value;
-        // Фильтруем только ингредиенты для выбора в изделии
         final ingredient = provider
             .getIngredientsByType(IngredientType.ingredient)
             .firstWhere((ing) => ing.id == c.ingredientId,
@@ -1604,12 +1884,11 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                     price: 0,
                     packageSize: 0,
                     type: IngredientType.ingredient));
-        final ingredientName = ingredient.name;
         return ListTile(
-          key: ValueKey('$title-$idx'), // Уникальный ключ для каждого ListTile
-          title: Text(ingredientName),
+          key: ValueKey('$title-$idx'),
+          title: Text(ingredient.name),
           trailing: Row(
-            mainAxisSize: MainAxisSize.min, // ВАЖНО: ограничиваем ширину Row
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text('${c.quantity.toStringAsFixed(0)} г/шт',
                   style: TextStyle(fontSize: 12)),
@@ -1617,9 +1896,8 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                   icon: Icon(Icons.remove_circle_outline,
                       color: Colors.red.shade300, size: 18),
                   onPressed: () => _removeComponent(components, c),
-                  padding: EdgeInsets.zero, // Уменьшаем padding для компактности
-                  constraints: BoxConstraints(
-                      minHeight: 24, minWidth: 24)), // Уменьшаем размер кнопки
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints(minHeight: 24, minWidth: 24)),
             ],
           ),
         );
@@ -1630,22 +1908,21 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
-
-    // Recalculate total cost and unit cost on each build
     int producedQuantity =
-        int.tryParse(_producedQuantityController.text) ?? 1; // <<< ПАРСИНГ
+        int.tryParse(_producedQuantityController.text) ?? 1;
     double totalCost = Product(
             id: '',
             name: '',
             ingredients: _ingredients,
-            producedQuantity: producedQuantity) // <<< ПЕРЕДАЧА
+            producedQuantity: producedQuantity)
         .getCost(provider.ingredients);
-    double unitCost = producedQuantity > 0 ? totalCost / producedQuantity : 0; // <<< РАСЧЕТ
+    double unitCost =
+        producedQuantity > 0 ? totalCost / producedQuantity : 0;
 
     return Scaffold(
       appBar: AppBar(
-          title:
-              Text(_isEditing ? 'Редактировать изделие' : 'Новое изделие')),
+          title: Text(
+              _isEditing ? 'Редактировать изделие' : 'Новое изделие')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -1657,37 +1934,37 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                   decoration: InputDecoration(
                       labelText: 'Название изделия',
                       border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(vertical: 16.0, horizontal: 12.0)),
-                  validator: (value) => value!.isEmpty ? 'Введите название' : null),
+                      contentPadding: EdgeInsets.symmetric(
+                          vertical: 16.0, horizontal: 12.0)),
+                  validator: (value) =>
+                      value!.isEmpty ? 'Введите название' : null),
               SizedBox(height: 16),
               TextFormField(
-                  // <<< НОВОЕ ПОЛЕ
-                  controller: _producedQuantityController,
-                  decoration: InputDecoration(
-                      labelText: 'Количество изготовленных',
-                      border: OutlineInputBorder()),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value!.isEmpty) return 'Введите количество';
-                    final quantity = int.tryParse(value);
-                    if (quantity == null || quantity <= 0) {
-                      return 'Количество должно быть больше 0';
-                    }
-                    return null;
-                  },
+                controller: _producedQuantityController,
+                decoration: InputDecoration(
+                    labelText: 'Количество изготовленных',
+                    border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value!.isEmpty) return 'Введите количество';
+                  final quantity = int.tryParse(value);
+                  if (quantity == null || quantity <= 0) {
+                    return 'Количество должно быть больше 0';
+                  }
+                  return null;
+                },
               ),
               SizedBox(height: 20),
               _buildComponentList('Ингредиенты', _ingredients, provider),
               Divider(height: 30),
               Text(
-                  'Итоговая себестоимость (общая): ${totalCost.toStringAsFixed(2)} ₽',
+                  'Себестоимость (общая): ${totalCost.toStringAsFixed(2)} ₽',
                   style: Theme.of(context)
                       .textTheme
                       .titleLarge
                       ?.copyWith(fontWeight: FontWeight.bold)),
               Text(
-                  'Итоговая себестоимость (единица): ${unitCost.toStringAsFixed(2)} ₽',
+                  'Себестоимость (единица): ${unitCost.toStringAsFixed(2)} ₽',
                   style: Theme.of(context)
                       .textTheme
                       .titleLarge
@@ -1703,8 +1980,8 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                         id: _isEditing ? widget.initialProduct!.id : '',
                         name: _nameController.text,
                         ingredients: _ingredients,
-                        producedQuantity: int.parse(
-                            _producedQuantityController.text)); // <<< СОХРАНЕНИЕ
+                        producedQuantity:
+                            int.parse(_producedQuantityController.text));
                     if (_isEditing) {
                       provider.updateProduct(product);
                     } else {
@@ -1722,7 +1999,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   }
 }
 
-// --- ГЛАВНЫЙ ЭКРАН СПРАВОЧНИКА ---
+// --- СПРАВОЧНИК ---
 class IngredientsMainScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1751,11 +2028,9 @@ class IngredientsMainScreen extends StatelessWidget {
   }
 }
 
-// --- ЭКРАН СПИСКА ИНГРЕДИЕНТОВ ПО ТИПУ ---
 class IngredientsListScreen extends StatelessWidget {
   final IngredientType type;
   const IngredientsListScreen({required this.type});
-
   String _getTypeName(IngredientType type) {
     switch (type) {
       case IngredientType.ingredient:
@@ -1765,7 +2040,7 @@ class IngredientsListScreen extends StatelessWidget {
       case IngredientType.packaging:
         return 'Упаковка';
       default:
-        return 'Неизвестно';
+        return '';
     }
   }
 
@@ -1776,7 +2051,8 @@ class IngredientsListScreen extends StatelessWidget {
 
     return ingredients.isEmpty
         ? Center(
-            child: Text('${_getTypeName(type)} пусты.\nНажмите "+", чтобы добавить.',
+            child: Text(
+                '${_getTypeName(type)} пусты.\nНажмите "+", чтобы добавить.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey)))
         : ListView.builder(
@@ -1792,7 +2068,7 @@ class IngredientsListScreen extends StatelessWidget {
                     subtitle: Text(
                         '${ing.price} ₽ / ${ing.packageSize.toStringAsFixed(0)} г/шт'),
                     trailing: Wrap(
-                      spacing: 8, // Небольшое расстояние между кнопками
+                      spacing: 8,
                       children: [
                         IconButton(
                           icon: Icon(Icons.edit, color: Colors.grey.shade600),
@@ -1805,37 +2081,24 @@ class IngredientsListScreen extends StatelessWidget {
                         IconButton(
                           icon: Icon(Icons.delete, color: Colors.red.shade400),
                           onPressed: () {
-                            // Диалог подтверждения удаления
                             showDialog(
                               context: context,
                               builder: (BuildContext context) {
                                 return AlertDialog(
                                   title: Text('Подтвердите удаление'),
-                                  content: Text(
-                                      'Вы уверены, что хотите удалить ${_getTypeName(ing.type).toLowerCase()} "${ing.name}"?'),
+                                  content: Text('Удалить "${ing.name}"?'),
                                   actions: <Widget>[
                                     TextButton(
                                       child: Text('Отмена'),
                                       onPressed: () {
-                                        Navigator.of(context)
-                                            .pop(); // Закрываем диалог
+                                        Navigator.of(context).pop();
                                       },
                                     ),
                                     TextButton(
                                       child: Text('Удалить'),
                                       onPressed: () {
                                         provider.deleteIngredient(ing.id);
-                                        Navigator.of(context)
-                                            .pop(); // Закрываем диалог
-                                        // Показываем уведомление
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                                '${_getTypeName(ing.type)} "${ing.name}" удален(а)'),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
+                                        Navigator.of(context).pop();
                                       },
                                     ),
                                   ],
@@ -1852,10 +2115,9 @@ class IngredientsListScreen extends StatelessWidget {
   }
 }
 
-// --- ЭКРАН ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ ИНГРЕДИЕНТА ---
 class IngredientEditScreen extends StatefulWidget {
   final Ingredient? initialIngredient;
-  final IngredientType type; // Новый параметр для типа ингредиента
+  final IngredientType type;
   const IngredientEditScreen({this.initialIngredient, required this.type});
 
   @override
@@ -1867,10 +2129,9 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
   late TextEditingController _nameController;
   late TextEditingController _priceController;
   late TextEditingController _packageSizeController;
-  late IngredientType _ingredientType; // Локальная переменная для типа
+  late IngredientType _ingredientType;
 
   bool get _isEditing => widget.initialIngredient != null;
-
   @override
   void initState() {
     super.initState();
@@ -1880,7 +2141,6 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
         text: widget.initialIngredient?.price.toString() ?? '');
     _packageSizeController = TextEditingController(
         text: widget.initialIngredient?.packageSize.toString() ?? '');
-    // Устанавливаем тип из параметров или из существующего ингредиента
     _ingredientType = widget.initialIngredient?.type ?? widget.type;
   }
 
@@ -1894,23 +2154,8 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
 
   @override
   Widget build(BuildContext context) {
-    String getTypeName(IngredientType type) {
-      switch (type) {
-        case IngredientType.ingredient:
-          return 'ингредиент';
-        case IngredientType.decoration:
-          return 'украшение';
-        case IngredientType.packaging:
-          return 'упаковку';
-        default:
-          return 'элемент';
-      }
-    }
-
     return Scaffold(
-      appBar: AppBar(
-          title:
-              Text(_isEditing ? 'Редактировать' : 'Новый ${getTypeName(_ingredientType)}')),
+      appBar: AppBar(title: Text(_isEditing ? 'Редактировать' : 'Новый')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -1921,7 +2166,8 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
                   controller: _nameController,
                   decoration: InputDecoration(
                       labelText: 'Название', border: OutlineInputBorder()),
-                  validator: (value) => value!.isEmpty ? 'Введите название' : null),
+                  validator: (value) =>
+                      value!.isEmpty ? 'Введите название' : null),
               SizedBox(height: 16),
               TextFormField(
                   controller: _priceController,
@@ -1929,7 +2175,8 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
                       labelText: 'Цена за упаковку, ₽',
                       border: OutlineInputBorder()),
                   keyboardType: TextInputType.number,
-                  validator: (value) => value!.isEmpty ? 'Введите цену' : null),
+                  validator: (value) =>
+                      value!.isEmpty ? 'Введите цену' : null),
               SizedBox(height: 16),
               TextFormField(
                   controller: _packageSizeController,
@@ -1937,7 +2184,8 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
                       labelText: 'Вес/кол-во в упаковке (г/шт)',
                       border: OutlineInputBorder()),
                   keyboardType: TextInputType.number,
-                  validator: (value) => value!.isEmpty ? 'Введите вес' : null),
+                  validator: (value) =>
+                      value!.isEmpty ? 'Введите вес' : null),
               SizedBox(height: 20),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -1951,7 +2199,7 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
                         price: double.tryParse(_priceController.text) ?? 0,
                         packageSize:
                             double.tryParse(_packageSizeController.text) ?? 0,
-                        type: _ingredientType); // Используем локальную переменную типа
+                        type: _ingredientType);
                     final provider =
                         Provider.of<PastryProvider>(context, listen: false);
                     if (_isEditing) {
@@ -1971,21 +2219,20 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
   }
 }
 
-// --- НОВЫЙ ЭКРАН: ЗАПАСЫ ---
+// --- ЭКРАН ЗАПАСОВ ---
 class InventoryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
     final currencyFormat = NumberFormat.currency(locale: 'ru_RU', symbol: '₽');
 
-    // Фильтруем записи с количеством > 0
     final availableInventory = provider.inventory
         .where((item) => item.availableQuantity > 0)
         .toList();
-
     return availableInventory.isEmpty
         ? Center(
-            child: Text('Запасы пусты.\nСоздайте изделие и добавьте его в запасы.',
+            child: Text(
+                'Запасы пусты.\nСоздайте изделие и добавьте его в запасы.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey)))
         : ListView.builder(
@@ -2022,7 +2269,7 @@ class InventoryScreen extends StatelessWidget {
                               return AlertDialog(
                                 title: Text('Подтвердите удаление'),
                                 content: Text(
-                                    'Вы уверены, что хотите удалить запись о запасе "${item.productName}" от ${DateFormat.yMd('ru_RU').format(item.productionDate)}?'),
+                                    'Удалить запись о запасе "${item.productName}"?'),
                                 actions: <Widget>[
                                   TextButton(
                                     child: Text('Отмена'),
@@ -2035,11 +2282,6 @@ class InventoryScreen extends StatelessWidget {
                                     onPressed: () {
                                       provider.deleteInventoryItem(item.id);
                                       Navigator.of(context).pop();
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                        content: Text('Запись удалена'),
-                                        backgroundColor: Colors.green,
-                                      ));
                                     },
                                   ),
                                 ],
@@ -2057,32 +2299,27 @@ class InventoryScreen extends StatelessWidget {
   }
 }
 
-// --- ЭКРАН СТАТИСТИКИ (ОБНОВЛЕННЫЙ) ---
+// --- СТАТИСТИКА ---
 class StatisticsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
     final now = DateTime.now();
-    final startOfWeek =
-        now.subtract(Duration(days: now.weekday - 1)); // Понедельник текущей недели
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
     final startOfMonth = DateTime(now.year, now.month, 1);
     final startOfYear = DateTime(now.year, 1, 1);
-
     final statsWeek = provider.getStatisticsForPeriod(startOfWeek, now);
     final statsMonth = provider.getStatisticsForPeriod(startOfMonth, now);
     final statsYear = provider.getStatisticsForPeriod(startOfYear, now);
-
-    // Для совместимости с предыдущим экраном
     final statsAllTime = provider.getStatistics();
 
     final currencyFormat = NumberFormat.currency(locale: 'ru_RU', symbol: '₽');
-
     return DefaultTabController(
-      length: 4, // 4 вкладки: Неделя, Месяц, Год, Всё время
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           bottom: TabBar(
-            isScrollable: true, // Позволяет прокручивать вкладки, если их много
+            isScrollable: true,
             tabs: [
               Tab(text: 'Неделя'),
               Tab(text: 'Месяц'),
@@ -2094,70 +2331,64 @@ class StatisticsScreen extends StatelessWidget {
         ),
         body: TabBarView(
           children: [
-            // --- СТАТИСТИКА ЗА НЕДЕЛЮ ---
             _buildStatsTabContent(
                 context, statsWeek, currencyFormat, 'за неделю'),
-            // --- СТАТИСТИКА ЗА МЕСЯЦ ---
             _buildStatsTabContent(
                 context, statsMonth, currencyFormat, 'за месяц'),
-            // --- СТАТИСТИКА ЗА ГОД ---
             _buildStatsTabContent(
                 context, statsYear, currencyFormat, 'за год'),
-            // --- СТАТИСТИКА ЗА ВСЁ ВРЕМЯ ---
             SingleChildScrollView(
-              // Добавлен SingleChildScrollView
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Статистика (выполненные заказы)',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                        textAlign: TextAlign.center),
-                    SizedBox(height: 24),
-                    StatisticCard(
-                        title: 'Полученная прибыль',
-                        value:
-                            currencyFormat.format(statsAllTime['profit'] ?? 0),
-                        color: Colors.green),
-                    SizedBox(height: 16),
-                    StatisticCard(
-                        title: 'Общая выручка',
-                        value:
-                            currencyFormat.format(statsAllTime['revenue'] ?? 0),
-                        color: Colors.blue),
-                    SizedBox(height: 16),
-                    StatisticCard(
-                        title: 'Общие затраты',
-                        value: currencyFormat.format(statsAllTime['cost'] ?? 0),
-                        color: Colors.orange),
-                    SizedBox(height: 16),
-                    StatisticCard(
-                        title: 'Выполнено заказов',
-                        value:
-                            (statsAllTime['orderCount'] ?? 0).toInt().toString(),
-                        color: Colors.grey),
-                  ]),
-                ),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('Статистика (выполненные заказы)',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                          textAlign: TextAlign.center),
+                      SizedBox(height: 24),
+                      StatisticCard(
+                          title: 'Полученная прибыль',
+                          value: currencyFormat
+                              .format(statsAllTime['profit'] ?? 0),
+                          color: Colors.green),
+                      SizedBox(height: 16),
+                      StatisticCard(
+                          title: 'Общая выручка',
+                          value: currencyFormat
+                              .format(statsAllTime['revenue'] ?? 0),
+                          color: Colors.blue),
+                      SizedBox(height: 16),
+                      StatisticCard(
+                          title: 'Общие затраты',
+                          value:
+                              currencyFormat.format(statsAllTime['cost'] ?? 0),
+                          color: Colors.orange),
+                      SizedBox(height: 16),
+                      StatisticCard(
+                          title: 'Выполнено заказов',
+                          value: (statsAllTime['orderCount'] ?? 0)
+                              .toInt()
+                              .toString(),
+                          color: Colors.grey),
+                    ]),
               ),
-            
+            ),
           ],
         ),
       ),
     );
   }
 
-  // --- ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ СТАТИСТИКИ ---
   Widget _buildStatsTabContent(BuildContext context, Map<String, double> stats,
       NumberFormat currencyFormat, String periodLabel) {
     return SingleChildScrollView(
-      // Добавлен SingleChildScrollView
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Статистика (выполненные заказы) $periodLabel',
+            Text('Статистика $periodLabel',
                 style: Theme.of(context).textTheme.headlineSmall,
                 textAlign: TextAlign.center),
             SizedBox(height: 24),
@@ -2197,311 +2428,11 @@ class StatisticsScreen extends StatelessWidget {
   }
 }
 
-// ===========================================================================
-// 6. ВИДЖЕТЫ
-// ===========================================================================
-class OrderCard extends StatelessWidget {
-  final Order order;
-  final Product product;
-  const OrderCard({required this.order, required this.product});
-
-  @override
-  Widget build(BuildContext context) {
-    final provider = Provider.of<PastryProvider>(context, listen: false);
-    final currencyFormat = NumberFormat.currency(locale: 'ru_RU', symbol: '₽');
-
-    // Определяем, какое имя изделия отображать
-    String displayProductName;
-    if (product.id == 'not_found') {
-      // Изделие было удалено, используем сохраненное имя
-      displayProductName = order.productName.isNotEmpty
-          ? order.productName
-          : 'Изделие удалено';
-    } else {
-      // Изделие существует, используем текущее имя
-      displayProductName = product.name;
-    }
-
-    // Рассчитываем себестоимость и прибыль
-    final totalCost = order.getTotalCost(provider.ingredients);
-    final totalPrice = order.getTotalPrice();
-    final profit = order.getProfit(provider.ingredients);
-    final decorationCost = order.getDecorationCost();
-    final packagingCost = order.getPackagingCost();
-
-    Color getStatusColor(OrderStatus status) {
-      switch (status) {
-        case OrderStatus.inProgress:
-          return Colors.red;
-        case OrderStatus.ready:
-          return Colors.amber;
-        case OrderStatus.completed:
-          return Colors.green;
-        default:
-          return Colors.grey;
-      }
-    }
-
-    IconData getStatusIcon(OrderStatus status) {
-      switch (status) {
-        case OrderStatus.inProgress:
-          return Icons.access_time; // Иконка "часы" для "в работе"
-        case OrderStatus.ready:
-          return Icons.check_circle; // Иконка "галочка" для "готов"
-        case OrderStatus.completed:
-          return Icons.done_all; // Иконка "галочки" для "выдан"
-        default:
-          return Icons.help;
-      }
-    }
-
-    String getStatusText(OrderStatus status) {
-      switch (status) {
-        case OrderStatus.inProgress:
-          return 'В работе';
-        case OrderStatus.ready:
-          return 'Готов';
-        case OrderStatus.completed:
-          return 'Выдан';
-        default:
-          return 'Неизвестно';
-      }
-    }
-
-    return Card(
-        margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: InkWell(
-          onTap: () {
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) =>
-                        OrderEditScreen(initialOrder: order)));
-          },
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start, // <--- ИСПРАВЛЕНО: Добавлена запятая после этого свойства
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(displayProductName,
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
-                    ),
-                    // Индикатор статуса
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: getStatusColor(order.status).withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(getStatusIcon(order.status),
-                              color: getStatusColor(order.status), size: 16),
-                          SizedBox(width: 4),
-                          Text(getStatusText(order.status),
-                              style: TextStyle(
-                                  color: getStatusColor(order.status),
-                                  fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Text('Заказчик: ${order.customerName}'),
-                if (order.customerPhone != null &&
-                    order.customerPhone!.isNotEmpty)
-                  Text('Телефон: ${order.customerPhone}'),
-                SizedBox(height: 4),
-                Text(
-                    'Цена за единицу: ${currencyFormat.format(order.sellingPrice)}'),
-                SizedBox(height: 4),
-                Text(
-                    'Количество (продаваемых): ${order.quantity}'),
-                // НОВАЯ ИНФОРМАЦИЯ: Отображение партии из запасов
-                if (order.inventoryItemId != null)
-                  FutureBuilder<InventoryItem?>(
-                    future: () async {
-                      try {
-                        return provider.inventory
-                            .firstWhere(
-                                (inv) => inv.id == order.inventoryItemId);
-                      } catch (e) {
-                        return null; // Если партия не найдена
-                      }
-                    }(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.done &&
-                          snapshot.hasData) {
-                        final inventoryItem = snapshot.data!;
-                        return Text(
-                            'Партия: ${DateFormat.yMd('ru_RU').format(inventoryItem.productionDate)}',
-                            style: TextStyle(color: Colors.blueGrey));
-                      } else if (snapshot.hasError) {
-                        return Text('Ошибка загрузки партии',
-                            style: TextStyle(color: Colors.red));
-                      }
-                      return Text('Загрузка партии...',
-                          style: TextStyle(color: Colors.grey));
-                    },
-                  ),
-                SizedBox(height: 4),
-                Text(
-                    'Общая цена: ${currencyFormat.format(totalPrice)}',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                // Отображаем информацию об украшениях
-                if (order.decorations.isNotEmpty) SizedBox(height: 4),
-                if (order.decorations.isNotEmpty)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Украшения:',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      ...order.decorations.map((decoration) =>
-                          Text('  ${decoration.itemName} (${decoration.quantity} г/шт)')),
-                    ],
-                  ),
-                // Отображаем информацию об упаковке
-                if (order.packaging.isNotEmpty) SizedBox(height: 4),
-                if (order.packaging.isNotEmpty)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Упаковка:',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      ...order.packaging.map((pack) =>
-                          Text('  ${pack.itemName} (${pack.quantity} шт)')),
-                    ],
-                  ),
-                SizedBox(height: 4),
-                Text(
-                    'Дата: ${DateFormat.yMd('ru_RU').format(order.orderDate)}'),
-                // Отображаем себестоимость и прибыль
-                SizedBox(height: 8),
-                Container(
-                  padding: EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                          'Общая себестоимость: ${currencyFormat.format(totalCost)}',
-                          style: TextStyle(fontSize: 14)),
-                      Text(
-                          'Стоимость украшений: ${currencyFormat.format(decorationCost)}',
-                          style: TextStyle(fontSize: 14)),
-                      Text(
-                          'Стоимость упаковки: ${currencyFormat.format(packagingCost)}',
-                          style: TextStyle(fontSize: 14)),
-                      Text('Прибыль: ${currencyFormat.format(profit)}',
-                          style: TextStyle(
-                              fontSize: 14,
-                              color: profit >= 0 ? Colors.green : Colors.red,
-                              fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 8),
-
-                // Кнопки изменения статуса и удаления
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                            tooltip: 'В работе',
-                            icon: Icon(Icons.access_time),
-                            color: order.status == OrderStatus.inProgress
-                                ? Colors.red
-                                : Colors.grey.shade300,
-                            onPressed: () => provider.updateOrderStatus(
-                                order.id, OrderStatus.inProgress)),
-                        IconButton(
-                            tooltip: 'Готов',
-                            icon: Icon(Icons.check_circle),
-                            color: order.status == OrderStatus.ready
-                                ? Colors.amber
-                                : Colors.grey.shade300,
-                            onPressed: () => provider.updateOrderStatus(
-                                order.id, OrderStatus.ready)),
-                        IconButton(
-                            tooltip: 'Выдан',
-                            icon: Icon(Icons.done_all),
-                            color: order.status == OrderStatus.completed
-                                ? Colors.green
-                                : Colors.grey.shade300,
-                            onPressed: () => provider.updateOrderStatus(
-                                order.id, OrderStatus.completed)),
-                      ],
-                    ),
-                    // Кнопка удаления заказа
-                    IconButton(
-                      icon: Icon(Icons.delete, color: Colors.red.shade400),
-                      onPressed: () {
-                        // Диалог подтверждения удаления
-                        showDialog(
-                          context: context,
-                          builder: (BuildContext context) {
-                            return AlertDialog(
-                              title: Text('Подтвердите удаление'),
-                              content: Text(
-                                  'Вы уверены, что хотите удалить заказ №${order.id.substring(0, 6)} для "$displayProductName"?'),
-                              actions: <Widget>[
-                                TextButton(
-                                  child: Text('Отмена'),
-                                  onPressed: () {
-                                    Navigator.of(context)
-                                        .pop(); // Закрываем диалог
-                                  },
-                                ),
-                                TextButton(
-                                  child: Text('Удалить'),
-                                  onPressed: () {
-                                    provider.deleteOrder(order.id);
-                                    Navigator.of(context)
-                                        .pop(); // Закрываем диалог
-                                    // Показываем уведомление
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(
-                                      SnackBar(
-                                        content: Text('Заказ удален'),
-                                        backgroundColor: Colors.green,
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ],
-                )
-              ],
-            ),
-          ),
-        ));
-  }
-}
-
 class StatisticCard extends StatelessWidget {
   final String title, value;
   final Color color;
   const StatisticCard(
       {required this.title, required this.value, required this.color});
-
   @override
   Widget build(BuildContext context) => Card(
       elevation: 2,
@@ -2528,9 +2459,8 @@ class _AddComponentDialogState extends State<AddComponentDialog> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context, listen: false);
-    // Только ингредиенты доступны для выбора в изделии
-    final ingredients = provider.getIngredientsByType(IngredientType.ingredient);
-
+    final ingredients =
+        provider.getIngredientsByType(IngredientType.ingredient);
     return AlertDialog(
       title: Text('Добавить ингредиент'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -2550,7 +2480,8 @@ class _AddComponentDialogState extends State<AddComponentDialog> {
             keyboardType: TextInputType.number),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text('Отмена')),
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: Text('Отмена')),
         ElevatedButton(
             onPressed: () {
               if (_selectedIngredientId != null &&
@@ -2567,13 +2498,11 @@ class _AddComponentDialogState extends State<AddComponentDialog> {
   }
 }
 
-// Новый виджет для добавления украшений и упаковки
 class AddDecorationPackagingDialog extends StatefulWidget {
   final String title;
   final List<Ingredient> items;
   const AddDecorationPackagingDialog(
       {required this.title, required this.items});
-
   @override
   _AddDecorationPackagingDialogState createState() =>
       _AddDecorationPackagingDialogState();
@@ -2584,7 +2513,6 @@ class _AddDecorationPackagingDialogState
   String? _selectedItemId;
   final _quantityController = TextEditingController(text: '1');
   final _idGenerator = Random();
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -2601,13 +2529,14 @@ class _AddDecorationPackagingDialogState
         ),
         SizedBox(height: 8),
         TextFormField(
-            controller: _quantityController,
-            decoration: InputDecoration(labelText: 'Количество (г/шт или шт)'),
-            keyboardType: TextInputType.number,
+          controller: _quantityController,
+          decoration: InputDecoration(labelText: 'Количество (г/шт или шт)'),
+          keyboardType: TextInputType.number,
         ),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text('Отмена')),
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: Text('Отмена')),
         ElevatedButton(
             onPressed: () {
               if (_selectedItemId != null &&
@@ -2615,11 +2544,11 @@ class _AddDecorationPackagingDialogState
                 final selectedItem = widget.items
                     .firstWhere((item) => item.id == _selectedItemId);
                 final item = OrderDecorationPackagingItem(
-                    id: _idGenerator.nextInt(100000).toString(), // Генерируем уникальный ID
-                    itemId: _selectedItemId!,
-                    quantity: double.tryParse(_quantityController.text) ?? 0,
-                    itemName: selectedItem.name,
-                    itemPriceAtTime: selectedItem.pricePerUnit,
+                  id: _idGenerator.nextInt(100000).toString(),
+                  itemId: _selectedItemId!,
+                  quantity: double.tryParse(_quantityController.text) ?? 0,
+                  itemName: selectedItem.name,
+                  itemPriceAtTime: selectedItem.pricePerUnit,
                 );
                 Navigator.pop(context, item);
               }
@@ -2628,4 +2557,4 @@ class _AddDecorationPackagingDialogState
       ],
     );
   }
-    }
+}
