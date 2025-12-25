@@ -1554,7 +1554,7 @@ class _OrderEditScreenState extends State<OrderEditScreen>
       ),
     );
   }
-  
+
   Widget _buildItemForm(
       int index, OrderItemFormData itemData, PastryProvider provider) {
     return SingleChildScrollView(
@@ -1823,24 +1823,23 @@ class _OrderEditScreenState extends State<OrderEditScreen>
   }
 
   Future<void> _addAddon(
-    List<OrderDecorationPackagingItem> list,
-    IngredientType type,
-    PastryProvider provider,
-  ) async {
-    final items = provider.getIngredientsByType(type);
-    final result = await showDialog<OrderDecorationPackagingItem>(
-      context: context,
-      builder: (ctx) => AddDecorationPackagingDialog(
-        title: type == IngredientType.decoration
-            ? 'Добавить украшение'
-            : 'Добавить упаковку',
-        items: items,
-      ),
-    );
-    if (result != null) {
-      setState(() => list.add(result));
-    }
+  List<OrderDecorationPackagingItem> list,
+  IngredientType type,
+  PastryProvider provider,
+) async {
+  final result = await showDialog<OrderDecorationPackagingItem>(
+    context: context,
+    builder: (ctx) => AddDecorationPackagingDialog(
+      title: type == IngredientType.decoration
+          ? 'Добавить украшение'
+          : 'Добавить упаковку',
+      type: type, // Передаём тип для возможности создания
+    ),
+  );
+  if (result != null) {
+    setState(() => list.add(result));
   }
+}
 
   Widget _buildItemSummary(OrderItemFormData itemData, PastryProvider provider) {
     final price = itemData.price;
@@ -2862,43 +2861,191 @@ class _AddComponentDialogState extends State<AddComponentDialog> {
   String? _selectedIngredientId;
   final _quantityController = TextEditingController();
 
+  Future<void> _createNewIngredient() async {
+    final provider = Provider.of<PastryProvider>(context, listen: false);
+    final countBefore = provider.getIngredientsByType(IngredientType.ingredient).length;
+    
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => IngredientEditScreen(type: IngredientType.ingredient),
+      ),
+    );
+    
+    // Проверяем что виджет ещё существует
+    if (!mounted) return;
+    
+    // Получаем обновлённый список
+    final ingredientsAfter = provider.getIngredientsByType(IngredientType.ingredient);
+    
+    // Если добавился новый ингредиент - выбираем его
+    if (ingredientsAfter.length > countBefore) {
+      final newIngredient = ingredientsAfter.last;
+      setState(() {
+        _selectedIngredientId = newIngredient.id;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<PastryProvider>(context, listen: false);
-    final ingredients =
-        provider.getIngredientsByType(IngredientType.ingredient);
+    final provider = Provider.of<PastryProvider>(context);
+    final ingredients = provider.getIngredientsByType(IngredientType.ingredient);
+    
+    // Валидация: проверяем существует ли выбранный ID
+    // Используем локальную переменную, чтобы не менять state в build
+    String? validSelectedId = _selectedIngredientId;
+    if (validSelectedId != null && !ingredients.any((ing) => ing.id == validSelectedId)) {
+      validSelectedId = null;
+    }
+    
+    // Проверяем, можно ли добавить
+    final canAdd = validSelectedId != null && 
+                   _quantityController.text.isNotEmpty &&
+                   (double.tryParse(_quantityController.text) ?? 0) > 0;
+    
     return AlertDialog(
-      title: Text('Добавить ингредиент'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        DropdownButtonFormField<String>(
-          value: _selectedIngredientId,
-          hint: Text('Выберите ингредиент'),
-          items: ingredients
-              .map(
-                  (ing) => DropdownMenuItem(value: ing.id, child: Text(ing.name)))
-              .toList(),
-          onChanged: (value) => setState(() => _selectedIngredientId = value),
+      title: Row(
+        children: [
+          Icon(Icons.restaurant, color: Theme.of(context).primaryColor),
+          SizedBox(width: 8),
+          Text('Добавить ингредиент'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Dropdown с кнопкой создания
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    // Ключ для принудительного перестроения при изменении списка
+                    key: ValueKey('ingredients_${ingredients.length}'),
+                    value: validSelectedId,
+                    decoration: InputDecoration(
+                      labelText: 'Ингредиент',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    isExpanded: true,
+                    hint: Text('Выберите ингредиент'),
+                    items: ingredients
+                        .map((ing) => DropdownMenuItem(
+                              value: ing.id,
+                              child: Text(ing.name, overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedIngredientId = value;
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: Icon(Icons.add, color: Theme.of(context).primaryColor),
+                    tooltip: 'Создать новый ингредиент',
+                    onPressed: _createNewIngredient,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: _quantityController,
+              decoration: InputDecoration(
+                labelText: 'Количество (г/шт)',
+                border: OutlineInputBorder(),
+                suffixText: 'г/шт',
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}), // Обновляем UI при вводе
+            ),
+            // Подсказка
+            if (ingredients.isEmpty)
+              Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.amber.shade700, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Нет ингредиентов. Нажмите "+", чтобы создать.',
+                          style: TextStyle(fontSize: 12, color: Colors.amber.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            // Показываем выбранный ингредиент для подтверждения
+            if (validSelectedId != null)
+              Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Выбрано: ${ingredients.firstWhere((i) => i.id == validSelectedId).name}',
+                          style: TextStyle(fontSize: 12, color: Colors.green.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
-        SizedBox(height: 8),
-        TextField(
-            controller: _quantityController,
-            decoration: InputDecoration(labelText: 'Количество (г/шт)'),
-            keyboardType: TextInputType.number),
-      ]),
+      ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: Text('Отмена')),
+          onPressed: () => Navigator.pop(context),
+          child: Text('Отмена'),
+        ),
         ElevatedButton(
-            onPressed: () {
-              if (_selectedIngredientId != null &&
-                  _quantityController.text.isNotEmpty) {
-                final component = RecipeComponent(
-                    ingredientId: _selectedIngredientId!,
-                    quantity: double.tryParse(_quantityController.text) ?? 0);
-                Navigator.pop(context, component);
-              }
-            },
-            child: Text('Добавить')),
+          onPressed: canAdd
+              ? () {
+                  final component = RecipeComponent(
+                    ingredientId: validSelectedId!,
+                    quantity: double.tryParse(_quantityController.text) ?? 0,
+                  );
+                  Navigator.pop(context, component);
+                }
+              : null,
+          child: Text('Добавить'),
+        ),
       ],
     );
   }
@@ -2906,61 +3053,236 @@ class _AddComponentDialogState extends State<AddComponentDialog> {
 
 class AddDecorationPackagingDialog extends StatefulWidget {
   final String title;
-  final List<Ingredient> items;
-  const AddDecorationPackagingDialog(
-      {required this.title, required this.items});
+  final IngredientType type;
+  
+  const AddDecorationPackagingDialog({
+    required this.title,
+    required this.type,
+  });
+  
   @override
   _AddDecorationPackagingDialogState createState() =>
       _AddDecorationPackagingDialogState();
 }
 
-class _AddDecorationPackagingDialogState
-extends State<AddDecorationPackagingDialog> {
-String? _selectedItemId;
-final _quantityController = TextEditingController(text: '1');
-final _idGenerator = Random();
-@override
-Widget build(BuildContext context) {
-return AlertDialog(
-title: Text(widget.title),
-content: Column(mainAxisSize: MainAxisSize.min, children: [
-DropdownButtonFormField<String>(
-initialValue: _selectedItemId,
-hint: Text('Выберите элемент'),
-items: widget.items
-.map((item) =>
-DropdownMenuItem(value: item.id, child: Text(item.name)))
-.toList(),
-onChanged: (value) => setState(() => _selectedItemId = value),
-),
-SizedBox(height: 8),
-TextFormField(
-controller: _quantityController,
-decoration: InputDecoration(labelText: 'Количество (г/шт или шт)'),
-keyboardType: TextInputType.number,
-),
-]),
-actions: [
-TextButton(
-onPressed: () => Navigator.pop(context), child: Text('Отмена')),
-ElevatedButton(
-onPressed: () {
-if (_selectedItemId != null &&
-_quantityController.text.isNotEmpty) {
-final selectedItem = widget.items
-.firstWhere((item) => item.id == _selectedItemId);
-final item = OrderDecorationPackagingItem(
-id: _idGenerator.nextInt(100000).toString(),
-itemId: _selectedItemId!,
-quantity: double.tryParse(_quantityController.text) ?? 0,
-itemName: selectedItem.name,
-itemPriceAtTime: selectedItem.pricePerUnit,
-);
-Navigator.pop(context, item);
-}
-},
-child: Text('Добавить')),
-],
-);
-}
+class _AddDecorationPackagingDialogState extends State<AddDecorationPackagingDialog> {
+  String? _selectedItemId;
+  final _quantityController = TextEditingController(text: '1');
+  final _idGenerator = Random();
+
+  String get _typeName {
+    switch (widget.type) {
+      case IngredientType.decoration:
+        return 'украшение';
+      case IngredientType.packaging:
+        return 'упаковку';
+      default:
+        return 'элемент';
+    }
+  }
+
+  String get _typeLabel {
+    switch (widget.type) {
+      case IngredientType.decoration:
+        return 'Украшение';
+      case IngredientType.packaging:
+        return 'Упаковка';
+      default:
+        return 'Элемент';
+    }
+  }
+
+  Future<void> _createNewItem() async {
+    final provider = Provider.of<PastryProvider>(context, listen: false);
+    final countBefore = provider.getIngredientsByType(widget.type).length;
+    
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => IngredientEditScreen(type: widget.type),
+      ),
+    );
+    
+    if (!mounted) return;
+    
+    final itemsAfter = provider.getIngredientsByType(widget.type);
+    
+    if (itemsAfter.length > countBefore) {
+      final newItem = itemsAfter.last;
+      setState(() {
+        _selectedItemId = newItem.id;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<PastryProvider>(context);
+    final items = provider.getIngredientsByType(widget.type);
+    
+    // Валидация выбранного ID
+    String? validSelectedId = _selectedItemId;
+    if (validSelectedId != null && !items.any((item) => item.id == validSelectedId)) {
+      validSelectedId = null;
+    }
+    
+    final canAdd = validSelectedId != null && 
+                   _quantityController.text.isNotEmpty &&
+                   (double.tryParse(_quantityController.text) ?? 0) > 0;
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(
+            widget.type == IngredientType.decoration 
+                ? Icons.auto_awesome 
+                : Icons.inventory_2,
+            color: Theme.of(context).primaryColor,
+          ),
+          SizedBox(width: 8),
+          Expanded(child: Text(widget.title)),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    // Ключ для принудительного перестроения
+                    key: ValueKey('${widget.type}_${items.length}'),
+                    value: validSelectedId,
+                    decoration: InputDecoration(
+                      labelText: _typeLabel,
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    isExpanded: true,
+                    hint: Text('Выберите $_typeName'),
+                    items: items
+                        .map((item) => DropdownMenuItem(
+                              value: item.id,
+                              child: Text(
+                                '${item.name} (${item.pricePerUnit.toStringAsFixed(0)} ₽)',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedItemId = value;
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: Icon(Icons.add, color: Theme.of(context).primaryColor),
+                    tooltip: 'Создать $_typeName',
+                    onPressed: _createNewItem,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            TextFormField(
+              controller: _quantityController,
+              decoration: InputDecoration(
+                labelText: 'Количество',
+                border: OutlineInputBorder(),
+                suffixText: 'шт',
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (items.isEmpty)
+              Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.amber.shade700, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Список пуст. Нажмите "+", чтобы создать $_typeName.',
+                          style: TextStyle(fontSize: 12, color: Colors.amber.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            // Подтверждение выбора
+            if (validSelectedId != null)
+              Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Выбрано: ${items.firstWhere((i) => i.id == validSelectedId).name}',
+                          style: TextStyle(fontSize: 12, color: Colors.green.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Отмена'),
+        ),
+        ElevatedButton(
+          onPressed: canAdd
+              ? () {
+                  final selectedItem = items.firstWhere((item) => item.id == validSelectedId);
+                  final item = OrderDecorationPackagingItem(
+                    id: _idGenerator.nextInt(100000).toString(),
+                    itemId: validSelectedId!,
+                    quantity: double.tryParse(_quantityController.text) ?? 0,
+                    itemName: selectedItem.name,
+                    itemPriceAtTime: selectedItem.pricePerUnit,
+                  );
+                  Navigator.pop(context, item);
+                }
+              : null,
+          child: Text('Добавить'),
+        ),
+      ],
+    );
+  }
 }
