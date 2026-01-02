@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'dart:collection';
 import 'dart:math';
+import 'package:table_calendar/table_calendar.dart';
+
 
 // ===========================================================================
 // 1. ТОЧКА ВХОДА (MAIN)
@@ -865,6 +867,7 @@ class _AddToInventoryScreenState extends State<AddToInventoryScreen> {
 }
 
 // --- ЭКРАН ЗАКАЗОВ ---
+// --- ЭКРАН ЗАКАЗОВ С КАЛЕНДАРЁМ ---
 class OrdersScreen extends StatefulWidget {
   final Function(DateTime?) onDaySelected;
   const OrdersScreen({required this.onDaySelected});
@@ -874,7 +877,9 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
+  DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
+  CalendarFormat _calendarFormat = CalendarFormat.week;
   OrderStatus? _selectedStatusFilter;
 
   @override
@@ -887,60 +892,215 @@ class _OrdersScreenState extends State<OrdersScreen> {
     });
   }
 
-  void _previousDay() {
-    setState(() {
-      _selectedDay = _selectedDay.subtract(Duration(days: 1));
-      widget.onDaySelected(_selectedDay);
-    });
+  // Получаем заказы для конкретного дня (по дате выдачи)
+  List<Order> _getOrdersForDay(DateTime day, List<Order> allOrders) {
+    return allOrders.where((order) => isSameDay(order.deliveryDate, day)).toList();
   }
 
-  void _nextDay() {
-    setState(() {
-      _selectedDay = _selectedDay.add(Duration(days: 1));
-      widget.onDaySelected(_selectedDay);
-    });
-  }
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDay,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2101),
-      locale: Locale('ru', 'RU'),
-    );
-    if (picked != null) {
-      setState(() {
-        _selectedDay = picked;
-        widget.onDaySelected(_selectedDay);
-      });
+  // Получаем статус дня для отображения маркеров
+  // Возвращает: 'hasInProgress', 'hasReady', 'allCompleted', 'empty'
+  Map<String, int> _getDayStatus(DateTime day, List<Order> allOrders) {
+    final ordersForDay = _getOrdersForDay(day, allOrders);
+    
+    int inProgressCount = 0;
+    int readyCount = 0;
+    int completedCount = 0;
+    
+    for (var order in ordersForDay) {
+      switch (order.status) {
+        case OrderStatus.inProgress:
+          inProgressCount++;
+          break;
+        case OrderStatus.ready:
+          readyCount++;
+          break;
+        case OrderStatus.completed:
+          completedCount++;
+          break;
+      }
     }
+    
+    return {
+      'inProgress': inProgressCount,
+      'ready': readyCount,
+      'completed': completedCount,
+      'total': ordersForDay.length,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
     final List<Order> allOrders = List.from(provider.orders);
-    List<Order> filteredOrders = List.from(allOrders);
+    
+    // Фильтруем заказы для выбранного дня
+    List<Order> filteredOrders = _getOrdersForDay(_selectedDay, allOrders);
 
-    // Фильтр по статусу
+    // Дополнительный фильтр по статусу
     if (_selectedStatusFilter != null) {
       filteredOrders = filteredOrders
           .where((order) => order.status == _selectedStatusFilter)
           .toList();
     }
 
-    // ИЗМЕНЕНО: Фильтруем по ДАТЕ ВЫДАЧИ (deliveryDate), а не по orderDate
-    filteredOrders = filteredOrders
-        .where((order) => isSameDay(order.deliveryDate, _selectedDay))
-        .toList();
-
     // Сортировка по дате создания (новые сверху)
     filteredOrders.sort((a, b) => b.orderDate.compareTo(a.orderDate));
 
     return Column(
       children: [
-        // Фильтры по статусу
+        // === КАЛЕНДАРЬ ===
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.shade200,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TableCalendar<Order>(
+            firstDay: DateTime.utc(2020, 1, 1),
+            lastDay: DateTime.utc(2030, 12, 31),
+            focusedDay: _focusedDay,
+            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+            calendarFormat: _calendarFormat,
+            startingDayOfWeek: StartingDayOfWeek.monday,
+            locale: 'ru_RU',
+            
+            // Настройки заголовка
+            headerStyle: HeaderStyle(
+              formatButtonVisible: true,
+              titleCentered: true,
+              formatButtonShowsNext: false,
+              formatButtonDecoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              formatButtonTextStyle: TextStyle(
+                color: Theme.of(context).primaryColor,
+                fontSize: 12,
+              ),
+              titleTextStyle: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+              leftChevronIcon: Icon(Icons.chevron_left, color: Theme.of(context).primaryColor),
+              rightChevronIcon: Icon(Icons.chevron_right, color: Theme.of(context).primaryColor),
+            ),
+            
+            // Стили календаря
+            calendarStyle: CalendarStyle(
+              outsideDaysVisible: false,
+              weekendTextStyle: TextStyle(color: Colors.red.shade300),
+              todayDecoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withOpacity(0.3),
+                shape: BoxShape.circle,
+              ),
+              selectedDecoration: BoxDecoration(
+                color: Theme.of(context).primaryColor,
+                shape: BoxShape.circle,
+              ),
+              markerDecoration: BoxDecoration(
+                shape: BoxShape.circle,
+              ),
+              markersMaxCount: 3,
+              markerSize: 6,
+              markerMargin: EdgeInsets.symmetric(horizontal: 1),
+            ),
+            
+            // Названия дней недели
+            daysOfWeekStyle: DaysOfWeekStyle(
+              weekdayStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              weekendStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.red.shade300),
+            ),
+            
+            // Переключение формата календаря
+            availableCalendarFormats: const {
+              CalendarFormat.month: 'Месяц',
+              CalendarFormat.twoWeeks: '2 недели',
+              CalendarFormat.week: 'Неделя',
+            },
+            
+            onFormatChanged: (format) {
+              setState(() {
+                _calendarFormat = format;
+              });
+            },
+            
+            // Выбор дня
+            onDaySelected: (selectedDay, focusedDay) {
+              setState(() {
+                _selectedDay = selectedDay;
+                _focusedDay = focusedDay;
+              });
+              widget.onDaySelected(selectedDay);
+            },
+            
+            onPageChanged: (focusedDay) {
+              _focusedDay = focusedDay;
+            },
+            
+            // МАРКЕРЫ (кружочки)
+            calendarBuilders: CalendarBuilders(
+              markerBuilder: (context, date, events) {
+                final status = _getDayStatus(date, allOrders);
+                
+                if (status['total'] == 0) return null;
+                
+                List<Widget> markers = [];
+                
+                // Красный кружок - заказы "В работе"
+                if (status['inProgress']! > 0) {
+                  markers.add(_buildMarker(Colors.red, status['inProgress']!));
+                }
+                
+                // Жёлтый/оранжевый кружок - заказы "Готов"
+                if (status['ready']! > 0) {
+                  markers.add(_buildMarker(Colors.amber, status['ready']!));
+                }
+                
+                // Зелёный кружок - все выданы
+                if (status['completed']! > 0 && 
+                    status['inProgress'] == 0 && 
+                    status['ready'] == 0) {
+                  markers.add(_buildMarker(Colors.green, status['completed']!));
+                }
+                
+                if (markers.isEmpty) return null;
+                
+                return Positioned(
+                  bottom: 1,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: markers,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        
+        // === ЛЕГЕНДА ===
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          color: Colors.grey.shade50,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLegendItem(Colors.red, 'В работе'),
+              SizedBox(width: 16),
+              _buildLegendItem(Colors.amber, 'Готов'),
+              SizedBox(width: 16),
+              _buildLegendItem(Colors.green, 'Все выданы'),
+            ],
+          ),
+        ),
+        
+        Divider(height: 1),
+        
+        // === ФИЛЬТРЫ ПО СТАТУСУ ===
         Container(
           padding: EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           color: Theme.of(context).cardColor,
@@ -959,52 +1119,46 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ),
           ),
         ),
+        
         Divider(height: 1),
         
-        // ИЗМЕНЕНО: Заголовок с указанием что это дата ВЫДАЧИ
+        // === ИНФОРМАЦИЯ О ВЫБРАННОМ ДНЕ ===
         Container(
-          padding: EdgeInsets.symmetric(vertical: 8),
+          padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           color: Colors.grey.shade50,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              IconButton(
-                icon: Icon(Icons.chevron_left),
-                onPressed: _previousDay,
-              ),
-              InkWell(
-                onTap: _pickDate,
-                child: Column(
-                  children: [
-                    Text(
-                      'Дата выдачи',
-                      style: TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                    SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Icon(Icons.event,
-                            size: 20, color: Theme.of(context).primaryColor),
-                        SizedBox(width: 8),
-                        Text(
-                          DateFormat('d MMMM yyyy', 'ru_RU').format(_selectedDay),
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ],
+              Icon(Icons.event, size: 18, color: Theme.of(context).primaryColor),
+              SizedBox(width: 8),
+              Text(
+                DateFormat('d MMMM yyyy (EEEE)', 'ru_RU').format(_selectedDay),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              IconButton(
-                icon: Icon(Icons.chevron_right),
-                onPressed: _nextDay,
+              Spacer(),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${filteredOrders.length} заказ(ов)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
               ),
             ],
           ),
         ),
+        
         Divider(height: 1),
         
-        // Список заказов
+        // === СПИСОК ЗАКАЗОВ ===
         Expanded(
           child: filteredOrders.isEmpty
               ? Center(
@@ -1038,6 +1192,49 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
+  // Виджет маркера (кружочек)
+  Widget _buildMarker(Color color, int count) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 1),
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.4),
+            blurRadius: 2,
+            spreadRadius: 0.5,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Виджет легенды
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+        ),
+      ],
+    );
+  }
+
+  // Чип фильтра статуса
   Widget _buildStatusChip(OrderStatus? status, String label) {
     final isSelected = _selectedStatusFilter == status;
     return ChoiceChip(
@@ -1050,10 +1247,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
       },
       selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
       labelStyle: TextStyle(
-          color: isSelected ? Theme.of(context).primaryColor : Colors.black),
+        color: isSelected ? Theme.of(context).primaryColor : Colors.black,
+        fontSize: 12,
+      ),
     );
   }
 }
+
 bool isSameDay(DateTime? a, DateTime? b) {
   if (a == null || b == null) return false;
   return a.year == b.year && a.month == b.month && a.day == b.day;
