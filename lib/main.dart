@@ -1463,6 +1463,53 @@ class _OrderEditScreenState extends State<OrderEditScreen>
       });
     });
   }
+  /// Создание нового изделия прямо из формы заказа
+Future<void> _createNewProduct(OrderItemFormData itemData) async {
+  final provider = Provider.of<PastryProvider>(context, listen: false);
+  final countBefore = provider.products.length;
+  
+  // Открываем экран создания изделия
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => ProductEditScreen(),
+    ),
+  );
+  
+  // Проверяем что виджет ещё существует
+  if (!mounted) return;
+  
+  // Получаем обновлённый список изделий
+  final productsAfter = provider.products;
+  
+  // Если добавилось новое изделие - выбираем его
+  if (productsAfter.length > countBefore) {
+    final newProduct = productsAfter.last;
+    setState(() {
+      itemData.selectedProductId = newProduct.id;
+      itemData.productName = newProduct.name;
+      itemData.isWeightBased = newProduct.isWeightBased;
+      itemData.selectedInventoryItemId = null;
+      
+      if (newProduct.isWeightBased) {
+        itemData.costPerGram = newProduct.getCostPerGram(provider.ingredients);
+        itemData.unitCostFromInventory = 0;
+      } else {
+        itemData.costPerGram = 0;
+        itemData.unitCostFromInventory = 0;
+      }
+    });
+    
+    // Показываем подтверждение
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Изделие "${newProduct.name}" создано и выбрано'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+}
 
   void _removeItem(int index) {
     if (_orderItems.length <= 1) {
@@ -1703,63 +1750,109 @@ class _OrderEditScreenState extends State<OrderEditScreen>
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      // Выбор изделия
-      DropdownButtonFormField<String>(
-        value: itemData.selectedProductId,
-        decoration: InputDecoration(
-          labelText: 'Изделие',
-          border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          isDense: true,
-        ),
-        isExpanded: true,
-        items: provider.products.map((p) {
-          return DropdownMenuItem(
-            value: p.id,
-            child: Row(
-              children: [
-                Icon(
-                  p.isWeightBased ? Icons.scale : Icons.grid_view,
-                  size: 16,
-                  color: p.isWeightBased ? Colors.orange : Colors.blue,
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(p.name, overflow: TextOverflow.ellipsis),
-                ),
-              ],
+      // === ВЫБОР ИЗДЕЛИЯ С КНОПКОЙ СОЗДАНИЯ ===
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Выпадающий список изделий
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('products_${provider.products.length}'),
+              value: itemData.selectedProductId,
+              decoration: InputDecoration(
+                labelText: 'Изделие',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                isDense: true,
+              ),
+              isExpanded: true,
+              hint: Text('Выберите изделие'),
+              items: provider.products.map((p) {
+                return DropdownMenuItem(
+                  value: p.id,
+                  child: Row(
+                    children: [
+                      Icon(
+                        p.isWeightBased ? Icons.scale : Icons.grid_view,
+                        size: 16,
+                        color: p.isWeightBased ? Colors.orange : Colors.blue,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(p.name, overflow: TextOverflow.ellipsis),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  itemData.selectedProductId = value;
+                  itemData.selectedInventoryItemId = null;
+                  
+                  if (value != null) {
+                    final product = provider.getProductById(value);
+                    itemData.productName = product.name;
+                    itemData.isWeightBased = product.isWeightBased;
+                    
+                    if (product.isWeightBased) {
+                      itemData.costPerGram = product.getCostPerGram(provider.ingredients);
+                      itemData.unitCostFromInventory = 0;
+                    } else {
+                      itemData.costPerGram = 0;
+                    }
+                  } else {
+                    itemData.productName = '';
+                    itemData.isWeightBased = false;
+                    itemData.costPerGram = 0;
+                  }
+                });
+              },
+              validator: (v) => v == null ? 'Выберите изделие' : null,
             ),
-          );
-        }).toList(),
-        onChanged: (value) {
-          setState(() {
-            itemData.selectedProductId = value;
-            itemData.selectedInventoryItemId = null;
-            
-            if (value != null) {
-              final product = provider.getProductById(value);
-              itemData.productName = product.name;
-              itemData.isWeightBased = product.isWeightBased;
-              
-              if (product.isWeightBased) {
-                // Для весового изделия
-                itemData.costPerGram = product.getCostPerGram(provider.ingredients);
-                itemData.unitCostFromInventory = 0;
-              } else {
-                // Для штучного изделия
-                itemData.costPerGram = 0;
-              }
-            } else {
-              itemData.productName = '';
-              itemData.isWeightBased = false;
-              itemData.costPerGram = 0;
-            }
-          });
-        },
-        validator: (v) => v == null ? 'Выберите изделие' : null,
+          ),
+          
+          SizedBox(width: 8),
+          
+          // === КНОПКА СОЗДАНИЯ НОВОГО ИЗДЕЛИЯ ===
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.add, color: Theme.of(context).primaryColor),
+              tooltip: 'Создать новое изделие',
+              onPressed: () => _createNewProduct(itemData),
+            ),
+          ),
+        ],
       ),
       
       SizedBox(height: 8),
+      
+      // Подсказка если нет изделий
+      if (provider.products.isEmpty)
+        Container(
+          padding: EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.shade200),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.amber.shade700, size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Нет изделий. Нажмите "+", чтобы создать.',
+                  style: TextStyle(fontSize: 12, color: Colors.amber.shade800),
+                ),
+              ),
+            ],
+          ),
+        ),
       
       // Индикатор типа изделия
       if (selectedProduct != null)
@@ -1830,7 +1923,7 @@ class _OrderEditScreenState extends State<OrderEditScreen>
           validator: (v) => !itemData.isWeightBased && v == null ? 'Выберите партию' : null,
         ),
       
-      // === ДЛЯ ВЕСОВОГО ИЗДЕЛИЯ: нет партий, только информация ===
+      // === ДЛЯ ВЕСОВОГО ИЗДЕЛИЯ: информация ===
       if (itemData.selectedProductId != null && itemData.isWeightBased)
         Container(
           padding: EdgeInsets.all(12),
