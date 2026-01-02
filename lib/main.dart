@@ -78,13 +78,25 @@ class Product {
   String name;
   List<RecipeComponent> ingredients;
   int producedQuantity;
+  bool isWeightBased;
+  // УБИРАЕМ поле baseWeight - теперь оно вычисляемое
 
   Product({
     required this.id,
     required this.name,
     this.ingredients = const [],
     this.producedQuantity = 1,
+    this.isWeightBased = false,
   });
+
+  // НОВОЕ: Базовый вес = сумма всех ингредиентов
+  double getBaseWeight() {
+    double total = 0;
+    for (var component in ingredients) {
+      total += component.quantity;
+    }
+    return total;
+  }
 
   double getCost(List<Ingredient> allIngredients) {
     double totalCost = 0.0;
@@ -100,12 +112,20 @@ class Product {
     return totalCost;
   }
 
+  // Для штучных изделий
   double getUnitCost(List<Ingredient> allIngredients) {
-    if (producedQuantity <= 0) return 0.0;
+    if (isWeightBased || producedQuantity <= 0) return 0.0;
     return getCost(allIngredients) / producedQuantity;
   }
-}
 
+  // Для весовых изделий - стоимость за грамм
+  double getCostPerGram(List<Ingredient> allIngredients) {
+    if (!isWeightBased) return 0.0;
+    final baseWeight = getBaseWeight();
+    if (baseWeight <= 0) return 0.0;
+    return getCost(allIngredients) / baseWeight;
+  }
+}
 class OrderDecorationPackagingItem {
   String id;
   String? itemId;
@@ -133,6 +153,12 @@ class OrderItem {
   double sellingPrice;
   List<OrderDecorationPackagingItem> decorations;
   List<OrderDecorationPackagingItem> packaging;
+  
+  // НОВЫЕ ПОЛЯ для весовых изделий
+  bool isWeightBased;
+  double? weight;        // вес в граммах (для весовых)
+  double costPerGram;    // себестоимость за грамм (фиксируется при создании)
+  double pricePerGram;   // цена продажи за грамм
 
   OrderItem({
     required this.id,
@@ -144,42 +170,81 @@ class OrderItem {
     this.sellingPrice = 0,
     List<OrderDecorationPackagingItem>? decorations,
     List<OrderDecorationPackagingItem>? packaging,
+    // Новые параметры
+    this.isWeightBased = false,
+    this.weight,
+    this.costPerGram = 0,
+    this.pricePerGram = 0,
   })  : decorations = decorations ?? [],
         packaging = packaging ?? [];
 
   double getTotalCost() {
-    double total = unitCostFromInventory * quantity;
+    double baseCost;
+    
+    if (isWeightBased) {
+      // Для весового изделия: стоимость за грамм * вес
+      baseCost = costPerGram * (weight ?? 0);
+    } else {
+      // Для штучного изделия: стоимость единицы * количество
+      baseCost = unitCostFromInventory * quantity;
+    }
+    
+    // Добавляем украшения и упаковку
+    double decoCost = 0;
+    double packCost = 0;
+    
     for (var d in decorations) {
-      total += d.itemPriceAtTime * d.quantity * quantity;
+      decoCost += d.itemPriceAtTime * d.quantity;
     }
     for (var p in packaging) {
-      total += p.itemPriceAtTime * p.quantity * quantity;
+      packCost += p.itemPriceAtTime * p.quantity;
     }
-    return total;
+    
+    // Для штучных - умножаем на количество, для весовых - нет
+    if (!isWeightBased) {
+      decoCost *= quantity;
+      packCost *= quantity;
+    }
+    
+    return baseCost + decoCost + packCost;
   }
 
-  double getTotalPrice() => sellingPrice * quantity;
+  double getTotalPrice() {
+    if (isWeightBased) {
+      // Цена за грамм * вес + (можно добавить отдельную наценку за украшения)
+      return pricePerGram * (weight ?? 0);
+    }
+    return sellingPrice * quantity;
+  }
+
   double getProfit() => getTotalPrice() - getTotalCost();
 
   double getDecorationCost() {
     double total = 0;
     for (var d in decorations) {
-      total += d.itemPriceAtTime * d.quantity * quantity;
+      total += d.itemPriceAtTime * d.quantity;
     }
+    if (!isWeightBased) total *= quantity;
     return total;
   }
 
   double getPackagingCost() {
     double total = 0;
     for (var p in packaging) {
-      total += p.itemPriceAtTime * p.quantity * quantity;
+      total += p.itemPriceAtTime * p.quantity;
     }
+    if (!isWeightBased) total *= quantity;
     return total;
   }
 
-  String get tabName => productName.isNotEmpty ? productName : 'Новое изделие';
+  String get tabName {
+    if (productName.isEmpty) return 'Новое изделие';
+    if (isWeightBased && weight != null && weight! > 0) {
+      return '$productName (${weight!.toStringAsFixed(0)}г)';
+    }
+    return productName;
+  }
 }
-
 // === ОБНОВЛЕННАЯ МОДЕЛЬ ЗАКАЗА ===
 class Order {
   String id;
@@ -761,8 +826,9 @@ class _AddToInventoryScreenState extends State<AddToInventoryScreen> {
                 validator: (value) {
                   if (value == null || value.isEmpty) return 'Введите количество';
                   final quantity = int.tryParse(value);
-                  if (quantity == null || quantity <= 0)
+                  if (quantity == null || quantity <= 0) {
                     return 'Количество должно быть больше 0';
+                  }
                   return null;
                 },
               ),
@@ -1238,8 +1304,13 @@ class OrderItemFormData {
   List<OrderDecorationPackagingItem> decorations;
   List<OrderDecorationPackagingItem> packaging;
 
+  bool isWeightBased;
+  double costPerGram;
+
   late TextEditingController priceController;
   late TextEditingController quantityController;
+  late TextEditingController weightKgController;
+  late TextEditingController pricePerKgController;
 
   OrderItemFormData({
     this.id,
@@ -1251,11 +1322,29 @@ class OrderItemFormData {
     List<OrderDecorationPackagingItem>? packaging,
     double? price,
     int? quantity,
+    this.isWeightBased = false,
+    this.costPerGram = 0,
+    double? weightGrams,
+    double? pricePerGram,
   })  : decorations = decorations ?? [],
         packaging = packaging ?? [] {
     priceController = TextEditingController(text: price?.toString() ?? '');
-    quantityController =
-        TextEditingController(text: quantity?.toString() ?? '1');
+    quantityController = TextEditingController(text: quantity?.toString() ?? '1');
+    
+    // ИЗМЕНЕНО: Показываем вес только если он реально был (при редактировании)
+    // При создании нового заказа — поле пустое
+    String weightKgText = '';
+    if (weightGrams != null && weightGrams > 0) {
+      weightKgText = (weightGrams / 1000).toStringAsFixed(2);
+    }
+    weightKgController = TextEditingController(text: weightKgText);
+    
+    // Цена за кг — тоже пустая при создании нового
+    String priceKgText = '';
+    if (pricePerGram != null && pricePerGram > 0) {
+      priceKgText = (pricePerGram * 1000).toStringAsFixed(0);
+    }
+    pricePerKgController = TextEditingController(text: priceKgText);
   }
 
   factory OrderItemFormData.fromOrderItem(OrderItem item) {
@@ -1269,29 +1358,43 @@ class OrderItemFormData {
       packaging: List.from(item.packaging),
       price: item.sellingPrice,
       quantity: item.quantity,
+      isWeightBased: item.isWeightBased,
+      costPerGram: item.costPerGram,
+      weightGrams: item.weight,
+      pricePerGram: item.pricePerGram,
     );
   }
 
   double get price => double.tryParse(priceController.text) ?? 0;
   int get quantity => int.tryParse(quantityController.text) ?? 1;
+  
+  double get weightKg => double.tryParse(weightKgController.text) ?? 0;
+  double get weightGrams => weightKg * 1000;
+  
+  double get pricePerKg => double.tryParse(pricePerKgController.text) ?? 0;
+  double get pricePerGram => pricePerKg / 1000;
 
   String getTabName() {
-    if (productName.isNotEmpty) {
-      return productName.length > 15
-          ? '${productName.substring(0, 15)}...'
+    if (productName.isEmpty) return 'Новое изделие';
+    if (isWeightBased && weightKg > 0) {
+      String name = productName.length > 10 
+          ? '${productName.substring(0, 10)}...' 
           : productName;
+      return '$name (${weightKg.toStringAsFixed(1)} кг)';
     }
-    return 'Новое изделие';
+    if (productName.length > 15) {
+      return '${productName.substring(0, 15)}...';
+    }
+    return productName;
   }
 
   void dispose() {
     priceController.dispose();
     quantityController.dispose();
+    weightKgController.dispose();
+    pricePerKgController.dispose();
   }
-}
-
-// ===========================================================================
-// ОБНОВЛЕННЫЙ ЭКРАН РЕДАКТИРОВАНИЯ ЗАКАЗА
+}// ОБНОВЛЕННЫЙ ЭКРАН РЕДАКТИРОВАНИЯ ЗАКАЗА
 // ===========================================================================
 class OrderEditScreen extends StatefulWidget {
   final DateTime? selectedDate;
@@ -1577,96 +1680,340 @@ class _OrderEditScreenState extends State<OrderEditScreen>
   }
 
   Widget _buildProductSelectionRow(
-      OrderItemFormData itemData, PastryProvider provider) {
-    
-    // 1. Проверяем, существует ли выбранный ID в реальном списке продуктов
-    // Если такого ID нет в списке provider.products, сбрасываем выбор в null, чтобы избежать краша
-    if (itemData.selectedProductId != null) {
-       final exists = provider.products.any((p) => p.id == itemData.selectedProductId);
-       if (!exists) {
-         itemData.selectedProductId = null;
-         itemData.productName = '';
-       }
+    OrderItemFormData itemData, PastryProvider provider) {
+  
+  // Проверяем существование выбранного продукта
+  Product? selectedProduct;
+  if (itemData.selectedProductId != null) {
+    final exists = provider.products.any((p) => p.id == itemData.selectedProductId);
+    if (!exists) {
+      itemData.selectedProductId = null;
+      itemData.productName = '';
+      itemData.isWeightBased = false;
+    } else {
+      selectedProduct = provider.products.firstWhere((p) => p.id == itemData.selectedProductId);
     }
+  }
 
-    List<InventoryItem> availableInventory = [];
-    if (itemData.selectedProductId != null) {
-      availableInventory =
-          provider.getAvailableInventoryForProduct(itemData.selectedProductId!);
-    }
+  List<InventoryItem> availableInventory = [];
+  if (itemData.selectedProductId != null && !itemData.isWeightBased) {
+    availableInventory = provider.getAvailableInventoryForProduct(itemData.selectedProductId!);
+  }
 
-    return Column(
-      children: [
-        DropdownButtonFormField<String>(
-          value: itemData.selectedProductId,
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // Выбор изделия
+      DropdownButtonFormField<String>(
+        value: itemData.selectedProductId,
+        decoration: InputDecoration(
+          labelText: 'Изделие',
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          isDense: true,
+        ),
+        isExpanded: true,
+        items: provider.products.map((p) {
+          return DropdownMenuItem(
+            value: p.id,
+            child: Row(
+              children: [
+                Icon(
+                  p.isWeightBased ? Icons.scale : Icons.grid_view,
+                  size: 16,
+                  color: p.isWeightBased ? Colors.orange : Colors.blue,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(p.name, overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        onChanged: (value) {
+          setState(() {
+            itemData.selectedProductId = value;
+            itemData.selectedInventoryItemId = null;
+            
+            if (value != null) {
+              final product = provider.getProductById(value);
+              itemData.productName = product.name;
+              itemData.isWeightBased = product.isWeightBased;
+              
+              if (product.isWeightBased) {
+                // Для весового изделия
+                itemData.costPerGram = product.getCostPerGram(provider.ingredients);
+                itemData.unitCostFromInventory = 0;
+              } else {
+                // Для штучного изделия
+                itemData.costPerGram = 0;
+              }
+            } else {
+              itemData.productName = '';
+              itemData.isWeightBased = false;
+              itemData.costPerGram = 0;
+            }
+          });
+        },
+        validator: (v) => v == null ? 'Выберите изделие' : null,
+      ),
+      
+      SizedBox(height: 8),
+      
+      // Индикатор типа изделия
+      if (selectedProduct != null)
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: itemData.isWeightBased ? Colors.orange.shade50 : Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                itemData.isWeightBased ? Icons.scale : Icons.grid_view,
+                size: 14,
+                color: itemData.isWeightBased ? Colors.orange : Colors.blue,
+              ),
+              SizedBox(width: 4),
+              Text(
+                itemData.isWeightBased 
+                    ? 'Весовое • ${itemData.costPerGram.toStringAsFixed(2)} ₽/г'
+                    : 'Штучное',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: itemData.isWeightBased ? Colors.orange.shade800 : Colors.blue.shade800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      
+      SizedBox(height: 8),
+      
+      // === ДЛЯ ШТУЧНОГО ИЗДЕЛИЯ: выбор партии из запасов ===
+      if (itemData.selectedProductId != null && !itemData.isWeightBased)
+        DropdownButtonFormField<String?>(
+          value: availableInventory.any((i) => i.id == itemData.selectedInventoryItemId) 
+              ? itemData.selectedInventoryItemId 
+              : null,
           decoration: InputDecoration(
-            labelText: 'Изделие',
+            labelText: 'Партия из запасов',
             border: OutlineInputBorder(),
             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             isDense: true,
           ),
           isExpanded: true,
-          items: provider.products
-              .map((p) => DropdownMenuItem(
-                    value: p.id,
-                    child: Text(p.name, overflow: TextOverflow.ellipsis),
-                  ))
-              .toList(),
+          items: [
+            DropdownMenuItem(value: null, child: Text('Выберите партию')),
+            ...availableInventory.map((inv) => DropdownMenuItem(
+              value: inv.id,
+              child: Text(
+                '${inv.availableQuantity} шт - ${DateFormat.yMd('ru_RU').format(inv.productionDate)} (${inv.unitCostAtTimeOfProduction.toStringAsFixed(0)} ₽/шт)',
+                overflow: TextOverflow.ellipsis,
+              ),
+            )),
+          ],
           onChanged: (value) {
             setState(() {
-              itemData.selectedProductId = value;
-              itemData.selectedInventoryItemId = null;
-              itemData.productName =
-                  value != null ? provider.getProductById(value).name : '';
+              itemData.selectedInventoryItemId = value;
+              if (value != null) {
+                final inv = provider.inventory.firstWhere((i) => i.id == value);
+                itemData.unitCostFromInventory = inv.unitCostAtTimeOfProduction;
+              } else {
+                itemData.unitCostFromInventory = 0;
+              }
             });
           },
-          validator: (v) => v == null ? 'Выберите изделие' : null,
+          validator: (v) => !itemData.isWeightBased && v == null ? 'Выберите партию' : null,
+        ),
+      
+      // === ДЛЯ ВЕСОВОГО ИЗДЕЛИЯ: нет партий, только информация ===
+      if (itemData.selectedProductId != null && itemData.isWeightBased)
+        Container(
+          padding: EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 16, color: Colors.grey),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Весовое изделие готовится под заказ.\nУкажите вес ниже.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ],
+  );
+}
+
+Widget _buildPriceQuantityRow(
+    OrderItemFormData itemData, PastryProvider provider) {
+  
+  if (itemData.isWeightBased) {
+    // === ДЛЯ ВЕСОВОГО ИЗДЕЛИЯ ===
+    final costPerKg = itemData.costPerGram * 1000;
+    
+    // Получаем базовый вес из продукта
+    double baseWeightGrams = 0;
+    if (itemData.selectedProductId != null) {
+      final product = provider.getProductById(itemData.selectedProductId!);
+      baseWeightGrams = product.getBaseWeight();
+    }
+    final baseWeightKg = baseWeightGrams / 1000;
+    
+    return Column(
+      children: [
+        Row(
+          children: [
+            // Поле веса в КГ
+            Expanded(
+              flex: 2,
+              child: TextFormField(
+                controller: itemData.weightKgController,
+                decoration: InputDecoration(
+                  labelText: 'Вес (кг)',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  isDense: true,
+                  prefixIcon: Icon(Icons.scale, size: 20),
+                  suffixText: 'кг',
+                  hintText: baseWeightKg > 0 
+                      ? 'напр. ${baseWeightKg.toStringAsFixed(1)}' 
+                      : '1.5',
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => setState(() {}),
+                validator: (v) {
+                  if (v!.isEmpty) return 'Введите вес';
+                  final weight = double.tryParse(v);
+                  if (weight == null || weight <= 0) return 'Вес > 0';
+                  return null;
+                },
+              ),
+            ),
+            SizedBox(width: 8),
+            // Поле цены за КГ
+            Expanded(
+              flex: 2,
+              child: TextFormField(
+                controller: itemData.pricePerKgController,
+                decoration: InputDecoration(
+                  labelText: 'Цена за 1 кг, ₽',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  isDense: true,
+                  suffixText: '₽/кг',
+                  hintText: '2500',
+                ),
+                keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
+                validator: (v) {
+                  if (v!.isEmpty) return 'Цена';
+                  return null;
+                },
+              ),
+            ),
+          ],
         ),
         SizedBox(height: 8),
-        // Логика выбора партии (Inventory) остается прежней, но с защитой от null
-        if (itemData.selectedProductId != null)
-          DropdownButtonFormField<String?>(
-            value: availableInventory.any((i) => i.id == itemData.selectedInventoryItemId) 
-                ? itemData.selectedInventoryItemId 
-                : null, // <--- ТАКАЯ ЖЕ ЗАЩИТА ДЛЯ ЗАПАСОВ
-            decoration: InputDecoration(
-              labelText: 'Партия из запасов',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              isDense: true,
-            ),
-            isExpanded: true,
-            items: [
-              DropdownMenuItem(value: null, child: Text('Готовить свежее (не из запасов)')),
-              ...availableInventory.map((inv) => DropdownMenuItem(
-                    value: inv.id,
-                    child: Text(
-                      '${inv.availableQuantity} шт - ${DateFormat.yMd('ru_RU').format(inv.productionDate)}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  )),
-            ],
-            onChanged: (value) {
-              setState(() {
-                itemData.selectedInventoryItemId = value;
-                if (value != null) {
-                  final inv =
-                      provider.inventory.firstWhere((i) => i.id == value);
-                  itemData.unitCostFromInventory =
-                      inv.unitCostAtTimeOfProduction;
-                } else {
-                   itemData.unitCostFromInventory = 0; // Сброс себестоимости если выбрали "свежее"
-                }
-              });
-            },
-            // validator убираем или меняем, так как null здесь допустим (значит "под заказ")
+        
+        // Подсказки для весового изделия
+        Container(
+          padding: EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            borderRadius: BorderRadius.circular(8),
           ),
+          child: Column(
+            children: [
+              // Базовый вес рецепта
+              if (baseWeightGrams > 0)
+                Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Базовый вес рецепта:', 
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                      Text(
+                        '${baseWeightGrams.toStringAsFixed(0)} г (${baseWeightKg.toStringAsFixed(2)} кг)',
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                      ),
+                    ],
+                  ),
+                ),
+              
+              // Себестоимость за кг
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Себестоимость за 1 кг:', 
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                  Text(
+                    '${costPerKg.toStringAsFixed(2)} ₽',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              
+              if (itemData.weightKg > 0) ...[
+                Divider(height: 12),
+                // Вес в граммах
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Вес:', style: TextStyle(fontSize: 12)),
+                    Text(
+                      '${itemData.weightGrams.toStringAsFixed(0)} г (${itemData.weightKg.toStringAsFixed(2)} кг)',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 4),
+                // Себестоимость итого
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Себестоимость:', style: TextStyle(fontSize: 12)),
+                    Text(
+                      '${(itemData.costPerGram * itemData.weightGrams).toStringAsFixed(2)} ₽',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 4),
+                // Итоговая цена
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Цена продажи:', style: TextStyle(fontSize: 12)),
+                    Text(
+                      '${(itemData.pricePerKg * itemData.weightKg).toStringAsFixed(2)} ₽',
+                      style: TextStyle(
+                        fontSize: 12, 
+                        fontWeight: FontWeight.bold, 
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
       ],
     );
-  }
-
-  Widget _buildPriceQuantityRow(
-      OrderItemFormData itemData, PastryProvider provider) {
+  } else {
+    // === ДЛЯ ШТУЧНОГО ИЗДЕЛИЯ (без изменений) ===
     return Row(
       children: [
         Expanded(
@@ -1712,8 +2059,7 @@ class _OrderEditScreenState extends State<OrderEditScreen>
                     unitCostAtTimeOfProduction: 0,
                   ),
                 );
-                if (qty > inv.availableQuantity)
-                  return 'Макс: ${inv.availableQuantity}';
+                if (qty > inv.availableQuantity) return 'Макс: ${inv.availableQuantity}';
               }
               return null;
             },
@@ -1722,8 +2068,8 @@ class _OrderEditScreenState extends State<OrderEditScreen>
       ],
     );
   }
-
-  Widget _buildDecorationsSection(
+}
+Widget _buildDecorationsSection(
       OrderItemFormData itemData, PastryProvider provider) {
     return _buildAddonsSection(
       title: 'Украшения',
@@ -1841,45 +2187,73 @@ class _OrderEditScreenState extends State<OrderEditScreen>
   }
 }
 
-  Widget _buildItemSummary(OrderItemFormData itemData, PastryProvider provider) {
-    final price = itemData.price;
-    final quantity = itemData.quantity;
-    final unitCost = itemData.unitCostFromInventory;
-
-    double totalPrice = price * quantity;
-    double totalCost = unitCost * quantity;
-
-    for (var d in itemData.decorations) {
-      totalCost += d.itemPriceAtTime * d.quantity * quantity;
-    }
-    for (var p in itemData.packaging) {
-      totalCost += p.itemPriceAtTime * p.quantity * quantity;
-    }
-
-    final profit = totalPrice - totalCost;
-
-    return Container(
-      padding: EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildMiniStat('Цена', currencyFormat.format(totalPrice)),
-          _buildMiniStat('С/с', currencyFormat.format(totalCost)),
-          _buildMiniStat(
-            'Прибыль',
-            currencyFormat.format(profit),
-            color: profit >= 0 ? Colors.green : Colors.red,
-          ),
-        ],
-      ),
-    );
+Widget _buildItemSummary(OrderItemFormData itemData, PastryProvider provider) {
+  double totalPrice;
+  double totalCost;
+  
+  if (itemData.isWeightBased) {
+    // Для весового изделия (расчёт через граммы для точности)
+    totalPrice = itemData.pricePerGram * itemData.weightGrams;
+    totalCost = itemData.costPerGram * itemData.weightGrams;
+  } else {
+    // Для штучного изделия
+    totalPrice = itemData.price * itemData.quantity;
+    totalCost = itemData.unitCostFromInventory * itemData.quantity;
   }
 
-  Widget _buildMiniStat(String label, String value, {Color? color}) {
+  // Добавляем стоимость украшений и упаковки
+  for (var d in itemData.decorations) {
+    double decoCost = d.itemPriceAtTime * d.quantity;
+    if (!itemData.isWeightBased) decoCost *= itemData.quantity;
+    totalCost += decoCost;
+  }
+  for (var p in itemData.packaging) {
+    double packCost = p.itemPriceAtTime * p.quantity;
+    if (!itemData.isWeightBased) packCost *= itemData.quantity;
+    totalCost += packCost;
+  }
+
+  final profit = totalPrice - totalCost;
+
+  return Container(
+    padding: EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: itemData.isWeightBased ? Colors.orange.shade50 : Colors.blue.shade50,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      children: [
+        if (itemData.isWeightBased && itemData.weightKg > 0)
+          Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.scale, size: 16, color: Colors.orange),
+                SizedBox(width: 4),
+                Text(
+                  'Вес: ${itemData.weightKg.toStringAsFixed(2)} кг (${itemData.weightGrams.toStringAsFixed(0)} г)',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildMiniStat('Цена', currencyFormat.format(totalPrice)),
+            _buildMiniStat('С/с', currencyFormat.format(totalCost)),
+            _buildMiniStat(
+              'Прибыль',
+              currencyFormat.format(profit),
+              color: profit >= 0 ? Colors.green : Colors.red,
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}Widget _buildMiniStat(String label, String value, {Color? color}) {
     return Column(
       children: [
         Text(label, style: TextStyle(fontSize: 11, color: Colors.grey)),
@@ -1894,75 +2268,86 @@ class _OrderEditScreenState extends State<OrderEditScreen>
   }
 
   Widget _buildBottomSection(PastryProvider provider) {
-    double totalPrice = 0;
-    double totalCost = 0;
+  double totalPrice = 0;
+  double totalCost = 0;
 
-    for (var item in _orderItems) {
+  for (var item in _orderItems) {
+    if (item.isWeightBased) {
+      // Весовое изделие
+      totalPrice += item.pricePerGram * item.weightGrams;
+      totalCost += item.costPerGram * item.weightGrams;
+    } else {
+      // Штучное изделие
       final qty = item.quantity;
       totalPrice += item.price * qty;
       totalCost += item.unitCostFromInventory * qty;
-      for (var d in item.decorations) {
-        totalCost += d.itemPriceAtTime * d.quantity * qty;
-      }
-      for (var p in item.packaging) {
-        totalCost += p.itemPriceAtTime * p.quantity * qty;
-      }
     }
+    
+    // Украшения и упаковка
+    for (var d in item.decorations) {
+      double decoCost = d.itemPriceAtTime * d.quantity;
+      if (!item.isWeightBased) decoCost *= item.quantity;
+      totalCost += decoCost;
+    }
+    for (var p in item.packaging) {
+      double packCost = p.itemPriceAtTime * p.quantity;
+      if (!item.isWeightBased) packCost *= item.quantity;
+      totalCost += packCost;
+    }
+  }
 
-    final profit = totalPrice - totalCost;
+  final profit = totalPrice - totalCost;
 
-    return Container(
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.shade300,
-            blurRadius: 4,
-            offset: Offset(0, -2),
+  return Container(
+    padding: EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.shade300,
+          blurRadius: 4,
+          offset: Offset(0, -2),
+        ),
+      ],
+    ),
+    child: SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildTotalStat('Изделий', '${_orderItems.length}', Icons.cake),
+              _buildTotalStat('Итого', currencyFormat.format(totalPrice), Icons.payments),
+              _buildTotalStat(
+                'Прибыль',
+                currencyFormat.format(profit),
+                Icons.trending_up,
+                color: profit >= 0 ? Colors.green : Colors.red,
+              ),
+            ],
+          ),
+          SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _saveOrder,
+              child: Text(
+                _isEditing ? 'Сохранить изменения' : 'Создать заказ',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
           ),
         ],
       ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildTotalStat('Изделий', '${_orderItems.length}', Icons.cake),
-                _buildTotalStat(
-                    'Итого', currencyFormat.format(totalPrice), Icons.payments),
-                _buildTotalStat(
-                  'Прибыль',
-                  currencyFormat.format(profit),
-                  Icons.trending_up,
-                  color: profit >= 0 ? Colors.green : Colors.red,
-                ),
-              ],
-            ),
-            SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: Theme.of(context).primaryColor,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: _saveOrder,
-                child: Text(
-                  _isEditing ? 'Сохранить изменения' : 'Создать заказ',
-                  style: TextStyle(fontSize: 16),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+    ),
+  );
+}
   Widget _buildTotalStat(String label, String value, IconData icon,
       {Color? color}) {
     return Column(
@@ -1980,239 +2365,630 @@ class _OrderEditScreenState extends State<OrderEditScreen>
     );
   }
 
-  void _saveOrder() {
-    if (!_formKey.currentState!.validate()) {
+void _saveOrder() {
+  if (!_formKey.currentState!.validate()) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Заполните все обязательные поля')),
+    );
+    return;
+  }
+
+  final provider = Provider.of<PastryProvider>(context, listen: false);
+
+  // Проверяем все позиции
+  for (var item in _orderItems) {
+    if (item.selectedProductId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Заполните все обязательные поля')),
+        SnackBar(content: Text('Выберите изделие для всех позиций')),
       );
       return;
     }
-
-    final provider = Provider.of<PastryProvider>(context, listen: false);
-
-    for (var item in _orderItems) {
-      if (item.selectedProductId == null ||
-          item.selectedInventoryItemId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Выберите изделие и партию для всех позиций')),
-        );
-        return;
-      }
-    }
-
-    final orderItems = _orderItems.map((formData) {
-      return OrderItem(
-        id: formData.id ?? Random().nextInt(100000).toString(),
-        productId: formData.selectedProductId!,
-        productName: formData.productName,
-        inventoryItemId: formData.selectedInventoryItemId,
-        unitCostFromInventory: formData.unitCostFromInventory,
-        quantity: formData.quantity,
-        sellingPrice: formData.price,
-        decorations: List.from(formData.decorations),
-        packaging: List.from(formData.packaging),
+    
+    // Для штучных изделий нужна партия
+    if (!item.isWeightBased && item.selectedInventoryItemId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Выберите партию для штучных изделий')),
       );
-    }).toList();
-
-    final order = Order(
-      id: _isEditing ? widget.initialOrder!.id : '',
-      customerName: _customerNameController.text.trim(),
-      customerPhone: _customerPhoneController.text.isEmpty
-          ? null
-          : _customerPhoneController.text,
-      orderDate:
-          widget.selectedDate ?? widget.initialOrder?.orderDate ?? DateTime.now(),
-      status: _isEditing ? widget.initialOrder!.status : OrderStatus.inProgress,
-      items: orderItems,
-    );
-
-    if (_isEditing) {
-      provider.updateOrder(order);
-    } else {
-      provider.addOrder(order);
+      return;
     }
-
-    Navigator.pop(context);
+    
+    // Для весовых изделий нужен вес
+    if (item.isWeightBased && item.weightKg <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Укажите вес для весовых изделий')),
+      );
+      return;
+    }
   }
-}
+
+  final orderItems = _orderItems.map((formData) {
+    return OrderItem(
+      id: formData.id ?? Random().nextInt(100000).toString(),
+      productId: formData.selectedProductId!,
+      productName: formData.productName,
+      inventoryItemId: formData.selectedInventoryItemId,
+      unitCostFromInventory: formData.unitCostFromInventory,
+      quantity: formData.quantity,
+      sellingPrice: formData.price,
+      decorations: List.from(formData.decorations),
+      packaging: List.from(formData.packaging),
+      // Весовые поля — сохраняем в граммах и цену за грамм
+      isWeightBased: formData.isWeightBased,
+      weight: formData.isWeightBased ? formData.weightGrams : null,  // в граммах
+      costPerGram: formData.costPerGram,
+      pricePerGram: formData.pricePerGram,  // конвертировано из ₽/кг
+    );
+  }).toList();
+
+  final order = Order(
+    id: _isEditing ? widget.initialOrder!.id : '',
+    customerName: _customerNameController.text.trim(),
+    customerPhone: _customerPhoneController.text.isEmpty
+        ? null
+        : _customerPhoneController.text,
+    orderDate: widget.selectedDate ?? widget.initialOrder?.orderDate ?? DateTime.now(),
+    status: _isEditing ? widget.initialOrder!.status : OrderStatus.inProgress,
+    items: orderItems,
+  );
+
+  if (_isEditing) {
+    provider.updateOrder(order);
+  } else {
+    provider.addOrder(order);
+  }
+
+  Navigator.pop(context);
+}}
 
 // --- ЭКРАН ИЗДЕЛИЙ ---
 class ProductsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
+    final currencyFormat = NumberFormat.currency(locale: 'ru_RU', symbol: '₽');
+
     return provider.products.isEmpty
         ? Center(
-            child: Text(
-                'У вас пока нет изделий.\nНажмите "+", чтобы добавить.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey)))
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.cake_outlined, size: 64, color: Colors.grey.shade400),
+                SizedBox(height: 16),
+                Text(
+                  'У вас пока нет изделий',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Нажмите "+", чтобы добавить',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          )
         : ListView.builder(
             padding: EdgeInsets.all(8),
             itemCount: provider.products.length,
             itemBuilder: (context, index) {
               final product = provider.products[index];
-              final cost = product.getCost(provider.ingredients);
-              final unitCost = product.getUnitCost(provider.ingredients);
+              final totalCost = product.getCost(provider.ingredients);
+              
               return Card(
-                  elevation: 2,
-                  margin: EdgeInsets.symmetric(vertical: 8),
-                  child: ListTile(
-                    title: Text(product.name,
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Column(
+                elevation: 2,
+                margin: EdgeInsets.symmetric(vertical: 8),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProductEditScreen(initialProduct: product),
+                      ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12.0),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                            'Себестоимость (общая): ${cost.toStringAsFixed(2)} ₽'),
-                        Text(
-                            'Себестоимость (единица): ${unitCost.toStringAsFixed(2)} ₽'),
-                        Text('Изготовлено: ${product.producedQuantity} шт'),
-                      ],
-                    ),
-                    trailing: Wrap(
-                      spacing: 8,
-                      children: [
-                        IconButton(
-                          icon:
-                              Icon(Icons.inventory, color: Colors.blue.shade600),
-                          tooltip: 'Добавить в запасы',
-                          onPressed: () =>
-                              _addToInventoryDialog(context, product, provider),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.edit, color: Colors.grey.shade600),
-                          onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) =>
-                                      ProductEditScreen(initialProduct: product))),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red.shade400),
-                          onPressed: () {
-                            showDialog(
-                              context: context,
-                              builder: (BuildContext context) {
-                                return AlertDialog(
-                                  title: Text('Подтвердите удаление'),
-                                  content:
-                                      Text('Удалить изделие "${product.name}"?'),
-                                  actions: <Widget>[
-                                    TextButton(
-                                      child: Text('Отмена'),
-                                      onPressed: () {
-                                        Navigator.of(context).pop();
-                                      },
+                        // === ЗАГОЛОВОК С НАЗВАНИЕМ И ТИПОМ ===
+                        Row(
+                          children: [
+                            // Иконка типа изделия
+                            Container(
+                              padding: EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: product.isWeightBased 
+                                    ? Colors.orange.shade50 
+                                    : Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                product.isWeightBased ? Icons.scale : Icons.grid_view,
+                                color: product.isWeightBased ? Colors.orange : Colors.blue,
+                                size: 24,
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            // Название и тип
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    product.name,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
                                     ),
-                                    TextButton(
-                                      child: Text('Удалить'),
-                                      onPressed: () {
-                                        provider.deleteProduct(product.id);
-                                        Navigator.of(context).pop();
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                                'Изделие "${product.name}" удалено'),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
-                                      },
+                                  ),
+                                  SizedBox(height: 2),
+                                  Container(
+                                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: product.isWeightBased 
+                                          ? Colors.orange.shade100 
+                                          : Colors.blue.shade100,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      product.isWeightBased ? 'Весовое' : 'Штучное',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: product.isWeightBased 
+                                            ? Colors.orange.shade800 
+                                            : Colors.blue.shade800,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Кнопки действий
+                            _buildActionButtons(context, product, provider),
+                          ],
+                        ),
+                        
+                        SizedBox(height: 12),
+                        Divider(height: 1),
+                        SizedBox(height: 12),
+                        
+                        // === ИНФОРМАЦИЯ О СЕБЕСТОИМОСТИ ===
+                        Container(
+                          padding: EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              // Себестоимость рецепта
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(Icons.receipt_long, size: 16, color: Colors.grey),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Себестоимость рецепта:',
+                                        style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                                      ),
+                                    ],
+                                  ),
+                                  Text(
+                                    currencyFormat.format(totalCost),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              
+                              SizedBox(height: 8),
+                              
+                              // Для весового или штучного
+                              if (product.isWeightBased) ...[
+  // Весовое изделие
+  Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Row(
+        children: [
+          Icon(Icons.scale, size: 16, color: Colors.orange),
+          SizedBox(width: 6),
+          Text(
+            'Базовый вес:',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+          ),
+        ],
+      ),
+      Text(
+        '${product.getBaseWeight().toStringAsFixed(0)} г',  // ✅ getBaseWeight()
+        style: TextStyle(fontSize: 14),
+      ),
+    ],
+  ),
+  SizedBox(height: 8),
+  Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Row(
+        children: [
+          Icon(Icons.monetization_on, size: 16, color: Colors.orange),
+          SizedBox(width: 6),
+          Text(
+            'Себестоимость за 1 кг:',
+            style: TextStyle(fontSize: 13, color: Colors.orange.shade700),
+          ),
+        ],
+      ),
+      Text(
+        '${(product.getCostPerGram(provider.ingredients) * 1000).toStringAsFixed(2)} ₽',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.orange,
+        ),
+      ),
+    ],
+  ),
+  SizedBox(height: 4),
+  Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Text(
+        '      Себестоимость за 1 г:',
+        style: TextStyle(fontSize: 12, color: Colors.grey),
+      ),
+      Text(
+        '${product.getCostPerGram(provider.ingredients).toStringAsFixed(4)} ₽',
+        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+      ),
+    ],
+  ),
+]
+else ...[
+                                // Штучное изделие
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.numbers, size: 16, color: Colors.blue),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Количество из рецепта:',
+                                          style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                                        ),
+                                      ],
+                                    ),
+                                    Text(
+                                      '${product.producedQuantity} шт',
+                                      style: TextStyle(fontSize: 14),
                                     ),
                                   ],
-                                );
-                              },
-                            );
-                          },
+                                ),
+                                SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.monetization_on, size: 16, color: Colors.blue),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Себестоимость за 1 шт:',
+                                          style: TextStyle(fontSize: 13, color: Colors.blue.shade700),
+                                        ),
+                                      ],
+                                    ),
+                                    Text(
+                                      currencyFormat.format(product.getUnitCost(provider.ingredients)),
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
+                        
+                        // === СПИСОК ИНГРЕДИЕНТОВ (компактный) ===
+                        if (product.ingredients.isNotEmpty) ...[
+                          SizedBox(height: 12),
+                          Text(
+                            'Ингредиенты:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: product.ingredients.map((comp) {
+                              final ingredient = provider.getIngredientById(comp.ingredientId);
+                              return Container(
+                                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade200,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '${ingredient.name} (${comp.quantity.toStringAsFixed(0)} г)',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ],
                     ),
-                  ));
+                  ),
+                ),
+              );
             },
           );
   }
 
-  void _addToInventoryDialog(
-      BuildContext context, Product product, PastryProvider provider) {
+  Widget _buildActionButtons(BuildContext context, Product product, PastryProvider provider) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Кнопка "Добавить в запасы" - только для штучных изделий
+        if (!product.isWeightBased)
+          IconButton(
+            icon: Icon(Icons.inventory, color: Colors.blue.shade600),
+            tooltip: 'Добавить в запасы',
+            onPressed: () => _addToInventoryDialog(context, product, provider),
+            constraints: BoxConstraints(minWidth: 36, minHeight: 36),
+            padding: EdgeInsets.all(4),
+          ),
+        
+        // Кнопка "Редактировать"
+        IconButton(
+          icon: Icon(Icons.edit, color: Colors.grey.shade600),
+          tooltip: 'Редактировать',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProductEditScreen(initialProduct: product),
+            ),
+          ),
+          constraints: BoxConstraints(minWidth: 36, minHeight: 36),
+          padding: EdgeInsets.all(4),
+        ),
+        
+        // Кнопка "Удалить"
+        IconButton(
+          icon: Icon(Icons.delete, color: Colors.red.shade400),
+          tooltip: 'Удалить',
+          onPressed: () => _confirmDelete(context, product, provider),
+          constraints: BoxConstraints(minWidth: 36, minHeight: 36),
+          padding: EdgeInsets.all(4),
+        ),
+      ],
+    );
+  }
+
+  void _confirmDelete(BuildContext context, Product product, PastryProvider provider) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Подтвердите удаление'),
+            ],
+          ),
+          content: Text('Удалить изделие "${product.name}"?\n\nЭто действие нельзя отменить.'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Отмена'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Удалить'),
+              onPressed: () {
+                provider.deleteProduct(product.id);
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Изделие "${product.name}" удалено'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _addToInventoryDialog(BuildContext context, Product product, PastryProvider provider) {
+    // Проверяем, что это штучное изделие
+    if (product.isWeightBased) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Весовые изделия нельзя добавить в запасы')),
+      );
+      return;
+    }
+
     if (product.producedQuantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка: Неверное количество изделия')));
+        SnackBar(content: Text('Ошибка: Неверное количество изделия')),
+      );
       return;
     }
 
     DateTime selectedDate = DateTime.now();
     TextEditingController quantityController =
         TextEditingController(text: product.producedQuantity.toString());
+    final currencyFormat = NumberFormat.currency(locale: 'ru_RU', symbol: '₽');
+    final unitCost = product.getUnitCost(provider.ingredients);
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setState) {
+            int quantity = int.tryParse(quantityController.text) ?? 0;
+            double totalCost = unitCost * quantity;
+
             return AlertDialog(
-              title: Text('Добавить в запасы'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
+              title: Row(
                 children: [
-                  Text('Изделие: ${product.name}'),
-                  SizedBox(height: 10),
-                  TextField(
-                    controller: quantityController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                        labelText: 'Количество', border: OutlineInputBorder()),
-                  ),
-                  SizedBox(height: 10),
-                  InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2101),
-                        locale: Locale('ru', 'RU'),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          selectedDate = picked;
-                        });
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: 'Дата изготовления',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.calendar_today),
-                      ),
-                      child: Text(DateFormat.yMd('ru_RU').format(selectedDate)),
-                    ),
-                  ),
+                  Icon(Icons.inventory, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Добавить в запасы')),
                 ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Информация об изделии
+                    Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            product.name,
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Себестоимость: ${currencyFormat.format(unitCost)} / шт',
+                            style: TextStyle(fontSize: 13, color: Colors.blue.shade700),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    
+                    // Количество
+                    TextField(
+                      controller: quantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Количество',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.numbers),
+                        suffixText: 'шт',
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    SizedBox(height: 12),
+                    
+                    // Дата изготовления
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2101),
+                          locale: Locale('ru', 'RU'),
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: 'Дата изготовления',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.calendar_today),
+                        ),
+                        child: Text(DateFormat('d MMMM yyyy', 'ru_RU').format(selectedDate)),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    
+                    // Итоговая стоимость
+                    if (quantity > 0)
+                      Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Общая себестоимость:'),
+                            Text(
+                              currencyFormat.format(totalCost),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('Отмена')),
-                ElevatedButton(
-                  onPressed: () {
-                    final qty = int.tryParse(quantityController.text);
-                    if (qty != null && qty > 0) {
-                      try {
-                        provider.addProductToInventory(
-                            product.id, qty, selectedDate);
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(
-                                'Добавлено в запасы: ${product.name} ($qty шт)')));
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Ошибка: ${e.toString()}')));
-                      }
-                    }
-                  },
-                  child: Text('Добавить'),
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Отмена'),
+                ),
+                ElevatedButton.icon(
+                  icon: Icon(Icons.add),
+                  label: Text('Добавить'),
+                  onPressed: quantity > 0
+                      ? () {
+                          try {
+                            provider.addProductToInventory(
+                              product.id,
+                              quantity,
+                              selectedDate,
+                            );
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Добавлено в запасы: ${product.name} ($quantity шт)',
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Ошибка: ${e.toString()}'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      : null,
                 ),
               ],
             );
@@ -2222,7 +2998,6 @@ class ProductsScreen extends StatelessWidget {
     );
   }
 }
-
 // --- ЭКРАН РЕДАКТИРОВАНИЯ ИЗДЕЛИЯ ---
 class ProductEditScreen extends StatefulWidget {
   final Product? initialProduct;
@@ -2236,20 +3011,20 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   late TextEditingController _nameController;
   late TextEditingController _producedQuantityController;
   late List<RecipeComponent> _ingredients;
+  late bool _isWeightBased;
 
   bool get _isEditing => widget.initialProduct != null;
+  
   @override
   void initState() {
     super.initState();
-    _nameController =
-        TextEditingController(text: widget.initialProduct?.name ?? '');
+    _nameController = TextEditingController(text: widget.initialProduct?.name ?? '');
     _producedQuantityController = TextEditingController(
         text: widget.initialProduct?.producedQuantity.toString() ?? '1');
     _ingredients = widget.initialProduct?.ingredients
-            .map((c) =>
-                RecipeComponent(ingredientId: c.ingredientId, quantity: c.quantity))
-            .toList() ??
-        [];
+            .map((c) => RecipeComponent(ingredientId: c.ingredientId, quantity: c.quantity))
+            .toList() ?? [];
+    _isWeightBased = widget.initialProduct?.isWeightBased ?? false;
   }
 
   @override
@@ -2267,28 +3042,33 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
     }
   }
 
-  void _removeComponent(
-      List<RecipeComponent> componentList, RecipeComponent component) {
+  void _removeComponent(List<RecipeComponent> componentList, RecipeComponent component) {
     setState(() {
       componentList.remove(component);
     });
   }
 
-  Widget _buildComponentList(
-      String title, List<RecipeComponent> components, PastryProvider provider) {
+  // Вычисляем базовый вес из ингредиентов
+  double _calculateBaseWeight() {
+    double total = 0;
+    for (var component in _ingredients) {
+      total += component.quantity;
+    }
+    return total;
+  }
+
+  Widget _buildComponentList(String title, List<RecipeComponent> components, PastryProvider provider) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text(title, style: Theme.of(context).textTheme.titleLarge),
         IconButton(
-            icon: Icon(Icons.add_circle_outline,
-                color: Theme.of(context).primaryColor),
+            icon: Icon(Icons.add_circle_outline, color: Theme.of(context).primaryColor),
             onPressed: () => _addComponent(components)),
       ]),
       if (components.isEmpty)
         Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Text('  Компоненты не добавлены',
-                style: TextStyle(color: Colors.grey))),
+            child: Text('  Компоненты не добавлены', style: TextStyle(color: Colors.grey))),
       ...components.asMap().entries.map((entry) {
         int idx = entry.key;
         RecipeComponent c = entry.value;
@@ -2307,11 +3087,9 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('${c.quantity.toStringAsFixed(0)} г/шт',
-                  style: TextStyle(fontSize: 12)),
+              Text('${c.quantity.toStringAsFixed(0)} г', style: TextStyle(fontSize: 12)),
               IconButton(
-                  icon: Icon(Icons.remove_circle_outline,
-                      color: Colors.red.shade300, size: 18),
+                  icon: Icon(Icons.remove_circle_outline, color: Colors.red.shade300, size: 18),
                   onPressed: () => _removeComponent(components, c),
                   padding: EdgeInsets.zero,
                   constraints: BoxConstraints(minHeight: 24, minWidth: 24)),
@@ -2325,18 +3103,33 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<PastryProvider>(context);
-    int producedQuantity = int.tryParse(_producedQuantityController.text) ?? 1;
+    
+    // Вычисляем базовый вес из ингредиентов
+    final baseWeight = _calculateBaseWeight();
+    
+    // Расчёт себестоимости
     double totalCost = Product(
-            id: '',
-            name: '',
-            ingredients: _ingredients,
-            producedQuantity: producedQuantity)
-        .getCost(provider.ingredients);
-    double unitCost = producedQuantity > 0 ? totalCost / producedQuantity : 0;
+      id: '',
+      name: '',
+      ingredients: _ingredients,
+      producedQuantity: int.tryParse(_producedQuantityController.text) ?? 1,
+      isWeightBased: _isWeightBased,
+    ).getCost(provider.ingredients);
+    
+    double unitCost = 0;
+    double costPerGram = 0;
+    double costPerKg = 0;
+    
+    if (_isWeightBased) {
+      costPerGram = baseWeight > 0 ? totalCost / baseWeight : 0;
+      costPerKg = costPerGram * 1000;
+    } else {
+      int producedQuantity = int.tryParse(_producedQuantityController.text) ?? 1;
+      unitCost = producedQuantity > 0 ? totalCost / producedQuantity : 0;
+    }
 
     return Scaffold(
-      appBar:
-          AppBar(title: Text(_isEditing ? 'Редактировать изделие' : 'Новое изделие')),
+      appBar: AppBar(title: Text(_isEditing ? 'Редактировать изделие' : 'Новое изделие')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -2344,56 +3137,288 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
           child: ListView(
             children: [
               TextFormField(
-                  controller: _nameController,
-                  decoration: InputDecoration(
-                      labelText: 'Название изделия',
-                      border: OutlineInputBorder(),
-                      contentPadding:
-                          EdgeInsets.symmetric(vertical: 16.0, horizontal: 12.0)),
-                  validator: (value) =>
-                      value!.isEmpty ? 'Введите название' : null),
-              SizedBox(height: 16),
-              TextFormField(
-                controller: _producedQuantityController,
+                controller: _nameController,
                 decoration: InputDecoration(
-                    labelText: 'Количество изготовленных',
-                    border: OutlineInputBorder()),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value!.isEmpty) return 'Введите количество';
-                  final quantity = int.tryParse(value);
-                  if (quantity == null || quantity <= 0) {
-                    return 'Количество должно быть больше 0';
-                  }
-                  return null;
-                },
+                  labelText: 'Название изделия',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(vertical: 16.0, horizontal: 12.0),
+                ),
+                validator: (value) => value!.isEmpty ? 'Введите название' : null,
               ),
+              SizedBox(height: 16),
+              
+              // === ПЕРЕКЛЮЧАТЕЛЬ ТИПА ИЗДЕЛИЯ ===
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _isWeightBased ? Colors.orange.shade50 : Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _isWeightBased ? Colors.orange.shade200 : Colors.blue.shade200,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          _isWeightBased ? Icons.scale : Icons.grid_view,
+                          color: _isWeightBased ? Colors.orange : Colors.blue,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Тип изделия',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _isWeightBased = false),
+                            child: Container(
+                              padding: EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: !_isWeightBased ? Colors.blue : Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.grid_view,
+                                    color: !_isWeightBased ? Colors.white : Colors.grey,
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Штучное',
+                                    style: TextStyle(
+                                      color: !_isWeightBased ? Colors.white : Colors.grey,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Капкейки, пирожные',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: !_isWeightBased ? Colors.white70 : Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _isWeightBased = true),
+                            child: Container(
+                              padding: EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: _isWeightBased ? Colors.orange : Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.scale,
+                                    color: _isWeightBased ? Colors.white : Colors.grey,
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Весовое',
+                                    style: TextStyle(
+                                      color: _isWeightBased ? Colors.white : Colors.grey,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Торты, рулеты',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: _isWeightBased ? Colors.white70 : Colors.grey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              
+              // === ПОЛЯ В ЗАВИСИМОСТИ ОТ ТИПА ===
+              if (_isWeightBased) ...[
+                // Для весового изделия - только информация
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 18, color: Colors.orange),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Базовый вес рецепта рассчитывается автоматически из суммы всех ингредиентов.',
+                              style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (baseWeight > 0) ...[
+                        SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.scale, size: 20, color: Colors.orange.shade700),
+                            SizedBox(width: 8),
+                            Text(
+                              'Базовый вес: ${baseWeight.toStringAsFixed(0)} г (${(baseWeight / 1000).toStringAsFixed(2)} кг)',
+                              style: TextStyle(
+                                fontSize: 14, 
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ] else ...[
+                // Для штучного изделия
+                TextFormField(
+                  controller: _producedQuantityController,
+                  decoration: InputDecoration(
+                    labelText: 'Количество изготовленных (шт)',
+                    helperText: 'Сколько штук получается из рецепта',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.numbers),
+                    suffixText: 'шт',
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => setState(() {}),
+                  validator: (value) {
+                    if (_isWeightBased) return null; // Не валидируем для весовых
+                    if (value!.isEmpty) return 'Введите количество';
+                    final quantity = int.tryParse(value);
+                    if (quantity == null || quantity <= 0) return 'Количество должно быть больше 0';
+                    return null;
+                  },
+                ),
+              ],
+              
               SizedBox(height: 20),
               _buildComponentList('Ингредиенты', _ingredients, provider),
               Divider(height: 30),
-              Text('Себестоимость (общая): ${totalCost.toStringAsFixed(2)} ₽',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              Text('Себестоимость (единица): ${unitCost.toStringAsFixed(2)} ₽',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+              
+              // === ИТОГОВАЯ СЕБЕСТОИМОСТЬ ===
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Себестоимость рецепта:', style: TextStyle(fontSize: 14)),
+                        Text('${totalCost.toStringAsFixed(2)} ₽', 
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    Divider(),
+                    if (_isWeightBased) ...[
+                      // Для весового
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Базовый вес рецепта:', style: TextStyle(fontSize: 14)),
+                          Text('${baseWeight.toStringAsFixed(0)} г', 
+                              style: TextStyle(fontSize: 14)),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Себестоимость за 1 кг:', 
+                              style: TextStyle(fontSize: 14, color: Colors.orange.shade800)),
+                          Text('${costPerKg.toStringAsFixed(2)} ₽/кг', 
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange)),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Себестоимость за 1 г:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          Text('${costPerGram.toStringAsFixed(4)} ₽/г', 
+                              style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        ],
+                      ),
+                      if (_ingredients.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Добавьте ингредиенты для расчёта',
+                            style: TextStyle(fontSize: 12, color: Colors.red),
+                          ),
+                        ),
+                    ] else ...[
+                      // Для штучного
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Себестоимость за 1 шт:', 
+                              style: TextStyle(fontSize: 14, color: Colors.blue.shade800)),
+                          Text('${unitCost.toStringAsFixed(2)} ₽', 
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue)),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              
               SizedBox(height: 20),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 16)),
+                style: ElevatedButton.styleFrom(padding: EdgeInsets.symmetric(vertical: 16)),
                 child: Text('Сохранить'),
                 onPressed: () {
                   if (_formKey.currentState!.validate()) {
+                    // Для весовых изделий проверяем наличие ингредиентов
+                    if (_isWeightBased && _ingredients.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Добавьте ингредиенты для весового изделия')),
+                      );
+                      return;
+                    }
+                    
                     final product = Product(
-                        id: _isEditing ? widget.initialProduct!.id : '',
-                        name: _nameController.text,
-                        ingredients: _ingredients,
-                        producedQuantity:
-                            int.parse(_producedQuantityController.text));
+                      id: _isEditing ? widget.initialProduct!.id : '',
+                      name: _nameController.text,
+                      ingredients: _ingredients,
+                      producedQuantity: int.tryParse(_producedQuantityController.text) ?? 1,
+                      isWeightBased: _isWeightBased,
+                    );
                     if (_isEditing) {
                       provider.updateProduct(product);
                     } else {
@@ -2409,9 +3434,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
       ),
     );
   }
-}
-
-// --- СПРАВОЧНИК ---
+}// --- СПРАВОЧНИК ---
 class IngredientsMainScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
