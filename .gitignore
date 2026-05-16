@@ -1,25 +1,26 @@
 ```
-# Dependencies
+# Dart/Flutter specific ignores
 .dart_tool/
-.build/
-dependencies/
+.packages
+.pub/
+build/
+*.g.dart
+*.freezed.dart
 
-# Compiled files
-*.dart.js
-*.js
-*.map
+# Dependencies
+node_modules/
 
-# Logs and temp files
+# Logs
 *.log
-*.tmp
-*.swp
+**/logs
 
-# Environment
+# Environment variables
 .env
 .env.local
-*.env.*
+.env.*
+!.env.example
 
-# Editors
+# IDE specific
 .vscode/
 .idea/
 *.swp
@@ -29,13 +30,7 @@ dependencies/
 .DS_Store
 Thumbs.db
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Distribution
+# Build outputs
 dist/
-build/
-bin/
+target/
 ```
