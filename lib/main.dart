@@ -4307,7 +4307,7 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
               TextFormField(
                   controller: _priceController,
                   decoration: InputDecoration(
-                      labelText: 'Цена за упаковку, ₽',
+                      labelText: 'Цена за единицу, ₽',
                       border: OutlineInputBorder()),
                   keyboardType: TextInputType.number,
                   validator: (value) => value!.isEmpty ? 'Введите цену' : null),
@@ -4315,7 +4315,7 @@ class _IngredientEditScreenState extends State<IngredientEditScreen> {
               TextFormField(
                   controller: _packageSizeController,
                   decoration: InputDecoration(
-                      labelText: 'Вес/кол-во в упаковке (г/шт)',
+                      labelText: 'Вес/кол-во в единице (г/шт)',
                       border: OutlineInputBorder()),
                   keyboardType: TextInputType.number,
                   validator: (value) => value!.isEmpty ? 'Введите вес' : null),
