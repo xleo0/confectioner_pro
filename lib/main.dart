@@ -892,69 +892,72 @@ class _MainScreenState extends State<MainScreen> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Черная обводка (смещенные копии текста)
-            Positioned(
-              left: -2,
-              child: Text(
+        title: Padding(
+          padding: const EdgeInsets.only(bottom: 4.0),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Черная обводка (смещенные копии текста)
+              Transform.translate(
+                offset: const Offset(-2, 0),
+                child: Text(
+                  'Кондитер Про',
+                  style: GoogleFonts.pacifico(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.5,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              Transform.translate(
+                offset: const Offset(2, 0),
+                child: Text(
+                  'Кондитер Про',
+                  style: GoogleFonts.pacifico(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.5,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              Transform.translate(
+                offset: const Offset(0, -2),
+                child: Text(
+                  'Кондитер Про',
+                  style: GoogleFonts.pacifico(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.5,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              Transform.translate(
+                offset: const Offset(0, 2),
+                child: Text(
+                  'Кондитер Про',
+                  style: GoogleFonts.pacifico(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.5,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+              // Белый текст по центру
+              Text(
                 'Кондитер Про',
                 style: GoogleFonts.pacifico(
                   fontSize: 32,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1.5,
-                  color: Colors.black,
+                  color: Colors.white,
                 ),
               ),
-            ),
-            Positioned(
-              right: -2,
-              child: Text(
-                'Кондитер Про',
-                style: GoogleFonts.pacifico(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-            Positioned(
-              top: -2,
-              child: Text(
-                'Кондитер Про',
-                style: GoogleFonts.pacifico(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: -2,
-              child: Text(
-                'Кондитер Про',
-                style: GoogleFonts.pacifico(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.5,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-            // Белый текст по центру
-            Text(
-              'Кондитер Про',
-              style: GoogleFonts.pacifico(
-                fontSize: 32,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.5,
-                color: Colors.white,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
