@@ -1,26 +1,25 @@
 ```
-# Dart/Flutter specific ignores
-.dart_tool/
-.packages
-.pub/
+# Build artifacts
+*.dart.js
+*.js
+*.map
 build/
-*.g.dart
-*.freezed.dart
+dist/
 
 # Dependencies
-node_modules/
+.pub/
+.packages
 
-# Logs
+# Logs and temp files
 *.log
-**/logs
+*.tmp
 
-# Environment variables
+# Environment
 .env
 .env.local
-.env.*
-!.env.example
+*.env.*
 
-# IDE specific
+# Editors
 .vscode/
 .idea/
 *.swp
@@ -29,8 +28,4 @@ node_modules/
 # OS generated files
 .DS_Store
 Thumbs.db
-
-# Build outputs
-dist/
-target/
 ```
