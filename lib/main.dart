@@ -896,15 +896,55 @@ class _MainScreenState extends State<MainScreen> {
           alignment: Alignment.center,
           children: [
             // Черная обводка (смещенные копии текста)
-            Text(
-              'Кондитер Про',
-              style: GoogleFonts.pacifico(
-                fontSize: 32,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.5,
-                color: Colors.black,
+            Positioned(
+              left: -2,
+              child: Text(
+                'Кондитер Про',
+                style: GoogleFonts.pacifico(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.5,
+                  color: Colors.black,
+                ),
               ),
             ),
+            Positioned(
+              right: -2,
+              child: Text(
+                'Кондитер Про',
+                style: GoogleFonts.pacifico(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.5,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+            Positioned(
+              top: -2,
+              child: Text(
+                'Кондитер Про',
+                style: GoogleFonts.pacifico(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.5,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: -2,
+              child: Text(
+                'Кондитер Про',
+                style: GoogleFonts.pacifico(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.5,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+            // Белый текст по центру
             Text(
               'Кондитер Про',
               style: GoogleFonts.pacifico(
