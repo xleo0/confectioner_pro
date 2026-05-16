@@ -9,7 +9,8 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'dart:collection';
 import 'dart:math';
 import 'package:table_calendar/table_calendar.dart';
-
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ===========================================================================
 // 1. ТОЧКА ВХОДА (MAIN)
@@ -17,6 +18,7 @@ import 'package:table_calendar/table_calendar.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ru_RU', null);
+  
   runApp(
     ChangeNotifierProvider(
       create: (context) => PastryProvider(),
@@ -25,8 +27,50 @@ void main() async {
   );
 }
 
+
+// === ЭКРАН ЗАГРУЗКИ ===
+class AppLoader extends StatefulWidget {
+  @override
+  _AppLoaderState createState() => _AppLoaderState();
+}
+
+class _AppLoaderState extends State<AppLoader> {
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final provider = Provider.of<PastryProvider>(context, listen: false);
+    await provider.loadData();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<PastryProvider>(context);
+    
+    if (!provider.isLoaded) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.pink),
+              SizedBox(height: 16),
+              Text('Загрузка данных...', style: TextStyle(color: Colors.grey)),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return MainScreen();
+  }
+}
+
 // ===========================================================================
-// 2. МОДЕЛИ ДАННЫХ
+// 2. МОДЕЛИ ДАННЫХ (с сериализацией)
 // ===========================================================================
 enum OrderStatus { inProgress, ready, completed }
 enum IngredientType { ingredient, decoration, packaging }
@@ -45,7 +89,25 @@ class Ingredient {
     required this.packageSize,
     this.type = IngredientType.ingredient,
   });
+  
   double get pricePerUnit => (packageSize > 0) ? price / packageSize : 0;
+
+  // === СЕРИАЛИЗАЦИЯ ===
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'price': price,
+    'packageSize': packageSize,
+    'type': type.index,
+  };
+
+  factory Ingredient.fromJson(Map<String, dynamic> json) => Ingredient(
+    id: json['id'],
+    name: json['name'],
+    price: (json['price'] as num).toDouble(),
+    packageSize: (json['packageSize'] as num).toDouble(),
+    type: IngredientType.values[json['type']],
+  );
 }
 
 class RecipeComponent {
@@ -53,6 +115,16 @@ class RecipeComponent {
   double quantity;
 
   RecipeComponent({required this.ingredientId, required this.quantity});
+
+  Map<String, dynamic> toJson() => {
+    'ingredientId': ingredientId,
+    'quantity': quantity,
+  };
+
+  factory RecipeComponent.fromJson(Map<String, dynamic> json) => RecipeComponent(
+    ingredientId: json['ingredientId'],
+    quantity: (json['quantity'] as num).toDouble(),
+  );
 }
 
 class InventoryItem {
@@ -73,6 +145,26 @@ class InventoryItem {
     required this.unitCostAtTimeOfProduction,
     int? availableQuantity,
   }) : availableQuantity = availableQuantity ?? quantity;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'productId': productId,
+    'productName': productName,
+    'quantity': quantity,
+    'availableQuantity': availableQuantity,
+    'productionDate': productionDate.toIso8601String(),
+    'unitCostAtTimeOfProduction': unitCostAtTimeOfProduction,
+  };
+
+  factory InventoryItem.fromJson(Map<String, dynamic> json) => InventoryItem(
+    id: json['id'],
+    productId: json['productId'],
+    productName: json['productName'],
+    quantity: json['quantity'],
+    availableQuantity: json['availableQuantity'],
+    productionDate: DateTime.parse(json['productionDate']),
+    unitCostAtTimeOfProduction: (json['unitCostAtTimeOfProduction'] as num).toDouble(),
+  );
 }
 
 class Product {
@@ -81,7 +173,6 @@ class Product {
   List<RecipeComponent> ingredients;
   int producedQuantity;
   bool isWeightBased;
-  // УБИРАЕМ поле baseWeight - теперь оно вычисляемое
 
   Product({
     required this.id,
@@ -91,7 +182,6 @@ class Product {
     this.isWeightBased = false,
   });
 
-  // НОВОЕ: Базовый вес = сумма всех ингредиентов
   double getBaseWeight() {
     double total = 0;
     for (var component in ingredients) {
@@ -107,27 +197,42 @@ class Product {
         final ingredient = allIngredients
             .firstWhere((ing) => ing.id == component.ingredientId);
         totalCost += ingredient.pricePerUnit * component.quantity;
-      } catch (e) {
-        // Ингредиент не найден
-      }
+      } catch (e) {}
     }
     return totalCost;
   }
 
-  // Для штучных изделий
   double getUnitCost(List<Ingredient> allIngredients) {
     if (isWeightBased || producedQuantity <= 0) return 0.0;
     return getCost(allIngredients) / producedQuantity;
   }
 
-  // Для весовых изделий - стоимость за грамм
   double getCostPerGram(List<Ingredient> allIngredients) {
     if (!isWeightBased) return 0.0;
     final baseWeight = getBaseWeight();
     if (baseWeight <= 0) return 0.0;
     return getCost(allIngredients) / baseWeight;
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'ingredients': ingredients.map((e) => e.toJson()).toList(),
+    'producedQuantity': producedQuantity,
+    'isWeightBased': isWeightBased,
+  };
+
+  factory Product.fromJson(Map<String, dynamic> json) => Product(
+    id: json['id'],
+    name: json['name'],
+    ingredients: (json['ingredients'] as List)
+        .map((e) => RecipeComponent.fromJson(e))
+        .toList(),
+    producedQuantity: json['producedQuantity'],
+    isWeightBased: json['isWeightBased'] ?? false,
+  );
 }
+
 class OrderDecorationPackagingItem {
   String id;
   String? itemId;
@@ -142,9 +247,25 @@ class OrderDecorationPackagingItem {
     required this.itemName,
     required this.itemPriceAtTime,
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'itemId': itemId,
+    'quantity': quantity,
+    'itemName': itemName,
+    'itemPriceAtTime': itemPriceAtTime,
+  };
+
+  factory OrderDecorationPackagingItem.fromJson(Map<String, dynamic> json) =>
+      OrderDecorationPackagingItem(
+        id: json['id'],
+        itemId: json['itemId'],
+        quantity: (json['quantity'] as num).toDouble(),
+        itemName: json['itemName'],
+        itemPriceAtTime: (json['itemPriceAtTime'] as num).toDouble(),
+      );
 }
 
-// === НОВАЯ МОДЕЛЬ: Изделие в заказе ===
 class OrderItem {
   String id;
   String productId;
@@ -155,12 +276,10 @@ class OrderItem {
   double sellingPrice;
   List<OrderDecorationPackagingItem> decorations;
   List<OrderDecorationPackagingItem> packaging;
-  
-  // НОВЫЕ ПОЛЯ для весовых изделий
   bool isWeightBased;
-  double? weight;        // вес в граммах (для весовых)
-  double costPerGram;    // себестоимость за грамм (фиксируется при создании)
-  double pricePerGram;   // цена продажи за грамм
+  double? weight;
+  double costPerGram;
+  double pricePerGram;
 
   OrderItem({
     required this.id,
@@ -172,7 +291,6 @@ class OrderItem {
     this.sellingPrice = 0,
     List<OrderDecorationPackagingItem>? decorations,
     List<OrderDecorationPackagingItem>? packaging,
-    // Новые параметры
     this.isWeightBased = false,
     this.weight,
     this.costPerGram = 0,
@@ -182,38 +300,28 @@ class OrderItem {
 
   double getTotalCost() {
     double baseCost;
-    
     if (isWeightBased) {
-      // Для весового изделия: стоимость за грамм * вес
       baseCost = costPerGram * (weight ?? 0);
     } else {
-      // Для штучного изделия: стоимость единицы * количество
       baseCost = unitCostFromInventory * quantity;
     }
-    
-    // Добавляем украшения и упаковку
     double decoCost = 0;
     double packCost = 0;
-    
     for (var d in decorations) {
       decoCost += d.itemPriceAtTime * d.quantity;
     }
     for (var p in packaging) {
       packCost += p.itemPriceAtTime * p.quantity;
     }
-    
-    // Для штучных - умножаем на количество, для весовых - нет
     if (!isWeightBased) {
       decoCost *= quantity;
       packCost *= quantity;
     }
-    
     return baseCost + decoCost + packCost;
   }
 
   double getTotalPrice() {
     if (isWeightBased) {
-      // Цена за грамм * вес + (можно добавить отдельную наценку за украшения)
       return pricePerGram * (weight ?? 0);
     }
     return sellingPrice * quantity;
@@ -246,14 +354,50 @@ class OrderItem {
     }
     return productName;
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'productId': productId,
+    'productName': productName,
+    'inventoryItemId': inventoryItemId,
+    'unitCostFromInventory': unitCostFromInventory,
+    'quantity': quantity,
+    'sellingPrice': sellingPrice,
+    'decorations': decorations.map((e) => e.toJson()).toList(),
+    'packaging': packaging.map((e) => e.toJson()).toList(),
+    'isWeightBased': isWeightBased,
+    'weight': weight,
+    'costPerGram': costPerGram,
+    'pricePerGram': pricePerGram,
+  };
+
+  factory OrderItem.fromJson(Map<String, dynamic> json) => OrderItem(
+    id: json['id'],
+    productId: json['productId'],
+    productName: json['productName'],
+    inventoryItemId: json['inventoryItemId'],
+    unitCostFromInventory: (json['unitCostFromInventory'] as num).toDouble(),
+    quantity: json['quantity'],
+    sellingPrice: (json['sellingPrice'] as num).toDouble(),
+    decorations: (json['decorations'] as List)
+        .map((e) => OrderDecorationPackagingItem.fromJson(e))
+        .toList(),
+    packaging: (json['packaging'] as List)
+        .map((e) => OrderDecorationPackagingItem.fromJson(e))
+        .toList(),
+    isWeightBased: json['isWeightBased'] ?? false,
+    weight: json['weight'] != null ? (json['weight'] as num).toDouble() : null,
+    costPerGram: (json['costPerGram'] as num?)?.toDouble() ?? 0,
+    pricePerGram: (json['pricePerGram'] as num?)?.toDouble() ?? 0,
+  );
 }
-// === ОБНОВЛЕННАЯ МОДЕЛЬ ЗАКАЗА ===
+
 class Order {
   String id;
   String customerName;
   String? customerPhone;
-  DateTime orderDate;      // Дата создания заказа
-  DateTime deliveryDate;   // НОВОЕ: Дата выдачи
+  DateTime orderDate;
+  DateTime deliveryDate;
   OrderStatus status;
   List<OrderItem> items;
 
@@ -262,29 +406,25 @@ class Order {
     required this.customerName,
     this.customerPhone,
     required this.orderDate,
-    DateTime? deliveryDate,  // НОВОЕ: опциональный параметр
+    DateTime? deliveryDate,
     this.status = OrderStatus.inProgress,
     List<OrderItem>? items,
-  }) : deliveryDate = deliveryDate ?? orderDate,  // По умолчанию = дате создания
+  }) : deliveryDate = deliveryDate ?? orderDate,
        items = items ?? [];
 
-  double getTotalCost() {
-    return items.fold(0.0, (sum, item) => sum + item.getTotalCost());
-  }
+  double getTotalCost() =>
+      items.fold(0.0, (sum, item) => sum + item.getTotalCost());
 
-  double getTotalPrice() {
-    return items.fold(0.0, (sum, item) => sum + item.getTotalPrice());
-  }
+  double getTotalPrice() =>
+      items.fold(0.0, (sum, item) => sum + item.getTotalPrice());
 
   double getProfit() => getTotalPrice() - getTotalCost();
 
-  double getTotalDecorationCost() {
-    return items.fold(0.0, (sum, item) => sum + item.getDecorationCost());
-  }
+  double getTotalDecorationCost() =>
+      items.fold(0.0, (sum, item) => sum + item.getDecorationCost());
 
-  double getTotalPackagingCost() {
-    return items.fold(0.0, (sum, item) => sum + item.getPackagingCost());
-  }
+  double getTotalPackagingCost() =>
+      items.fold(0.0, (sum, item) => sum + item.getPackagingCost());
 
   String get shortDescription {
     if (items.isEmpty) return 'Пустой заказ';
@@ -292,59 +432,43 @@ class Order {
     return '${items.first.productName} +${items.length - 1}';
   }
 
-  String get itemsList {
-    return items.map((i) => '${i.productName} x${i.quantity}').join(', ');
-  }
+  String get itemsList =>
+      items.map((i) => '${i.productName} x${i.quantity}').join(', ');
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'customerName': customerName,
+    'customerPhone': customerPhone,
+    'orderDate': orderDate.toIso8601String(),
+    'deliveryDate': deliveryDate.toIso8601String(),
+    'status': status.index,
+    'items': items.map((e) => e.toJson()).toList(),
+  };
+
+  factory Order.fromJson(Map<String, dynamic> json) => Order(
+    id: json['id'],
+    customerName: json['customerName'],
+    customerPhone: json['customerPhone'],
+    orderDate: DateTime.parse(json['orderDate']),
+    deliveryDate: DateTime.parse(json['deliveryDate']),
+    status: OrderStatus.values[json['status']],
+    items: (json['items'] as List)
+        .map((e) => OrderItem.fromJson(e))
+        .toList(),
+  );
 }
+
 // ===========================================================================
-// 3. УПРАВЛЕНИЕ СОСТОЯНИЕМ (PROVIDER)
+// 3. УПРАВЛЕНИЕ СОСТОЯНИЕМ (PROVIDER) С СОХРАНЕНИЕМ
 // ===========================================================================
 class PastryProvider with ChangeNotifier {
-  final List<Ingredient> _ingredients = [
-    Ingredient(
-        id: 'ing1',
-        name: 'Мука пшеничная',
-        price: 60,
-        packageSize: 1000,
-        type: IngredientType.ingredient),
-    Ingredient(
-        id: 'ing2',
-        name: 'Сахар',
-        price: 80,
-        packageSize: 1000,
-        type: IngredientType.ingredient),
-    Ingredient(
-        id: 'ing3',
-        name: 'Сливочное масло',
-        price: 150,
-        packageSize: 180,
-        type: IngredientType.ingredient),
-    Ingredient(
-        id: 'dec1',
-        name: 'Свежие ягоды',
-        price: 250,
-        packageSize: 100,
-        type: IngredientType.decoration),
-    Ingredient(
-        id: 'pack1',
-        name: 'Коробка для торта',
-        price: 100,
-        packageSize: 1,
-        type: IngredientType.packaging),
-  ];
-  final List<Product> _products = [
-    Product(
-        id: 'prod1',
-        name: 'Торт "Медовик"',
-        producedQuantity: 1,
-        ingredients: [
-          RecipeComponent(ingredientId: 'ing1', quantity: 300),
-          RecipeComponent(ingredientId: 'ing2', quantity: 200),
-          RecipeComponent(ingredientId: 'ing3', quantity: 180)
-        ])
-  ];
-  final List<Order> _orders = [];
-  final List<InventoryItem> _inventory = [];
+  List<Ingredient> _ingredients = [];
+  List<Product> _products = [];
+  List<Order> _orders = [];
+  List<InventoryItem> _inventory = [];
+  
+  bool _isLoaded = false;
+  bool get isLoaded => _isLoaded;
 
   UnmodifiableListView<Ingredient> get ingredients =>
       UnmodifiableListView(_ingredients);
@@ -353,6 +477,117 @@ class PastryProvider with ChangeNotifier {
   UnmodifiableListView<InventoryItem> get inventory =>
       UnmodifiableListView(_inventory);
 
+  // === ИНИЦИАЛИЗАЦИЯ: ЗАГРУЗКА ДАННЫХ ===
+  Future<void> loadData() async {
+    if (_isLoaded) return;
+    
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Загрузка ингредиентов
+    final ingredientsJson = prefs.getString('ingredients');
+    if (ingredientsJson != null) {
+      final List<dynamic> decoded = jsonDecode(ingredientsJson);
+      _ingredients = decoded.map((e) => Ingredient.fromJson(e)).toList();
+    } else {
+      // Начальные данные при первом запуске
+      _ingredients = [
+        Ingredient(
+            id: 'ing1',
+            name: 'Мука пшеничная',
+            price: 60,
+            packageSize: 1000,
+            type: IngredientType.ingredient),
+        Ingredient(
+            id: 'ing2',
+            name: 'Сахар',
+            price: 80,
+            packageSize: 1000,
+            type: IngredientType.ingredient),
+        Ingredient(
+            id: 'ing3',
+            name: 'Сливочное масло',
+            price: 150,
+            packageSize: 180,
+            type: IngredientType.ingredient),
+        Ingredient(
+            id: 'dec1',
+            name: 'Свежие ягоды',
+            price: 250,
+            packageSize: 100,
+            type: IngredientType.decoration),
+        Ingredient(
+            id: 'pack1',
+            name: 'Коробка для торта',
+            price: 100,
+            packageSize: 1,
+            type: IngredientType.packaging),
+      ];
+    }
+    
+    // Загрузка изделий
+    final productsJson = prefs.getString('products');
+    if (productsJson != null) {
+      final List<dynamic> decoded = jsonDecode(productsJson);
+      _products = decoded.map((e) => Product.fromJson(e)).toList();
+    } else {
+      _products = [
+        Product(
+            id: 'prod1',
+            name: 'Торт "Медовик"',
+            producedQuantity: 1,
+            ingredients: [
+              RecipeComponent(ingredientId: 'ing1', quantity: 300),
+              RecipeComponent(ingredientId: 'ing2', quantity: 200),
+              RecipeComponent(ingredientId: 'ing3', quantity: 180)
+            ])
+      ];
+    }
+    
+    // Загрузка заказов
+    final ordersJson = prefs.getString('orders');
+    if (ordersJson != null) {
+      final List<dynamic> decoded = jsonDecode(ordersJson);
+      _orders = decoded.map((e) => Order.fromJson(e)).toList();
+    }
+    
+    // Загрузка запасов
+    final inventoryJson = prefs.getString('inventory');
+    if (inventoryJson != null) {
+      final List<dynamic> decoded = jsonDecode(inventoryJson);
+      _inventory = decoded.map((e) => InventoryItem.fromJson(e)).toList();
+    }
+    
+    _isLoaded = true;
+    notifyListeners();
+  }
+
+  // === СОХРАНЕНИЕ ДАННЫХ ===
+  Future<void> _saveIngredients() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = jsonEncode(_ingredients.map((e) => e.toJson()).toList());
+    await prefs.setString('ingredients', jsonString);
+  }
+
+  Future<void> _saveProducts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = jsonEncode(_products.map((e) => e.toJson()).toList());
+    await prefs.setString('products', jsonString);
+  }
+
+  Future<void> _saveOrders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = jsonEncode(_orders.map((e) => e.toJson()).toList());
+    await prefs.setString('orders', jsonString);
+  }
+
+  Future<void> _saveInventory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = jsonEncode(_inventory.map((e) => e.toJson()).toList());
+    await prefs.setString('inventory', jsonString);
+  }
+
+  // === ОСТАЛЬНЫЕ МЕТОДЫ (обновлённые) ===
+  
   List<Ingredient> getIngredientsByType(IngredientType type) =>
       _ingredients.where((ing) => ing.type == type).toList();
 
@@ -363,6 +598,7 @@ class PastryProvider with ChangeNotifier {
   void addIngredient(Ingredient ingredient) {
     ingredient.id = _generateId();
     _ingredients.add(ingredient);
+    _saveIngredients(); // ← сохраняем
     notifyListeners();
   }
 
@@ -370,18 +606,21 @@ class PastryProvider with ChangeNotifier {
     final index = _ingredients.indexWhere((i) => i.id == updatedIngredient.id);
     if (index != -1) {
       _ingredients[index] = updatedIngredient;
+      _saveIngredients(); // ← сохраняем
       notifyListeners();
     }
   }
 
   void deleteIngredient(String id) {
     _ingredients.removeWhere((ingredient) => ingredient.id == id);
+    _saveIngredients(); // ← сохраняем
     notifyListeners();
   }
 
   void addProduct(Product product) {
     product.id = _generateId();
     _products.add(product);
+    _saveProducts(); // ← сохраняем
     notifyListeners();
   }
 
@@ -389,18 +628,21 @@ class PastryProvider with ChangeNotifier {
     final index = _products.indexWhere((p) => p.id == updatedProduct.id);
     if (index != -1) {
       _products[index] = updatedProduct;
+      _saveProducts(); // ← сохраняем
       notifyListeners();
     }
   }
 
   void deleteProduct(String id) {
     _products.removeWhere((product) => product.id == id);
+    _saveProducts(); // ← сохраняем
     notifyListeners();
   }
 
   void addInventoryItem(InventoryItem item) {
     item.id = _generateId();
     _inventory.add(item);
+    _saveInventory(); // ← сохраняем
     notifyListeners();
   }
 
@@ -408,12 +650,14 @@ class PastryProvider with ChangeNotifier {
     final index = _inventory.indexWhere((i) => i.id == updatedItem.id);
     if (index != -1) {
       _inventory[index] = updatedItem;
+      _saveInventory(); // ← сохраняем
       notifyListeners();
     }
   }
 
   void deleteInventoryItem(String id) {
     _inventory.removeWhere((item) => item.id == id);
+    _saveInventory(); // ← сохраняем
     notifyListeners();
   }
 
@@ -434,10 +678,9 @@ class PastryProvider with ChangeNotifier {
     if (existingIndex != -1) {
       _inventory[existingIndex].quantity += quantity;
       _inventory[existingIndex].availableQuantity += quantity;
-      notifyListeners();
     } else {
       final inventoryItem = InventoryItem(
-        id: '',
+        id: _generateId(),
         productId: product.id,
         productName: product.name,
         quantity: quantity,
@@ -445,8 +688,10 @@ class PastryProvider with ChangeNotifier {
         unitCostAtTimeOfProduction: unitCost,
         availableQuantity: quantity,
       );
-      addInventoryItem(inventoryItem);
+      _inventory.add(inventoryItem);
     }
+    _saveInventory(); // ← сохраняем
+    notifyListeners();
   }
 
   List<InventoryItem> getAvailableInventoryForProduct(String productId) =>
@@ -455,12 +700,10 @@ class PastryProvider with ChangeNotifier {
               item.productId == productId && item.availableQuantity > 0)
           .toList();
 
-  // === ОБНОВЛЕННЫЕ МЕТОДЫ ДЛЯ ЗАКАЗОВ ===
   void addOrder(Order order) {
     order.id = _generateId();
     _orders.add(order);
 
-    // Обновляем запасы для всех изделий в заказе
     for (var item in order.items) {
       if (item.inventoryItemId != null) {
         final inventoryIndex =
@@ -470,6 +713,8 @@ class PastryProvider with ChangeNotifier {
         }
       }
     }
+    _saveOrders(); // ← сохраняем
+    _saveInventory(); // ← сохраняем запасы тоже
     notifyListeners();
   }
 
@@ -478,7 +723,6 @@ class PastryProvider with ChangeNotifier {
     if (index != -1) {
       final oldOrder = _orders[index];
 
-      // Возвращаем старые изделия в запасы
       for (var item in oldOrder.items) {
         if (item.inventoryItemId != null) {
           final invIndex =
@@ -491,7 +735,6 @@ class PastryProvider with ChangeNotifier {
 
       _orders[index] = updatedOrder;
 
-      // Списываем новые изделия из запасов
       for (var item in updatedOrder.items) {
         if (item.inventoryItemId != null) {
           final invIndex =
@@ -502,6 +745,8 @@ class PastryProvider with ChangeNotifier {
         }
       }
 
+      _saveOrders(); // ← сохраняем
+      _saveInventory(); // ← сохраняем запасы тоже
       notifyListeners();
     }
   }
@@ -511,7 +756,6 @@ class PastryProvider with ChangeNotifier {
     if (orderIndex != -1) {
       final orderToDelete = _orders[orderIndex];
 
-      // Возвращаем все изделия в запасы
       for (var item in orderToDelete.items) {
         if (item.inventoryItemId != null) {
           final invIndex =
@@ -523,6 +767,8 @@ class PastryProvider with ChangeNotifier {
       }
 
       _orders.removeAt(orderIndex);
+      _saveOrders(); // ← сохраняем
+      _saveInventory(); // ← сохраняем запасы тоже
       notifyListeners();
     }
   }
@@ -531,6 +777,7 @@ class PastryProvider with ChangeNotifier {
     final orderIndex = _orders.indexWhere((o) => o.id == orderId);
     if (orderIndex != -1) {
       _orders[orderIndex].status = newStatus;
+      _saveOrders(); // ← сохраняем
       notifyListeners();
     }
   }
@@ -611,12 +858,11 @@ class PastryProApp extends StatelessWidget {
           visualDensity: VisualDensity.adaptivePlatformDensity,
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.pink)),
-      home: MainScreen(),
+      home: AppLoader(), // ← Новый загрузчик
       debugShowCheckedModeBanner: false,
     );
   }
 }
-
 class MainScreen extends StatefulWidget {
   @override
   _MainScreenState createState() => _MainScreenState();
