@@ -898,12 +898,7 @@ class _MainScreenState extends State<MainScreen> {
             fontSize: 32,
             fontWeight: FontWeight.w600,
             letterSpacing: 1.5,
-            foreground: Paint()
-              ..shader = ui.Gradient.linear(
-                const Offset(0, 0),
-                const Offset(200, 70),
-                [const Color(0xFFFF69B4), const Color(0xFFFF1493)],
-              ),
+            color: Colors.white,
           ),
         ),
         centerTitle: true,
