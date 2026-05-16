@@ -892,14 +892,29 @@ class _MainScreenState extends State<MainScreen> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          'Кондитер Про',
-          style: GoogleFonts.pacifico(
-            fontSize: 32,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.5,
-            color: Colors.white,
-          ),
+        title: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Черная обводка (смещенные копии текста)
+            Text(
+              'Кондитер Про',
+              style: GoogleFonts.pacifico(
+                fontSize: 32,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.5,
+                color: Colors.black,
+              ),
+            ),
+            Text(
+              'Кондитер Про',
+              style: GoogleFonts.pacifico(
+                fontSize: 32,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.5,
+                color: Colors.white,
+              ),
+            ),
+          ],
         ),
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
