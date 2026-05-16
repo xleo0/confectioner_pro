@@ -890,23 +890,27 @@ class _MainScreenState extends State<MainScreen> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: Text('Кондитер Про',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-              shadows: [
-                Shadow(
-                  blurRadius: 4.0,
-                  color: Colors.black26,
-                  offset: Offset(2.0, 2.0),
-                ),
-              ],
-            )),
+        title: ShaderMask(
+          shaderCallback: (bounds) => const LinearGradient(
+            colors: [Color(0xFFFF69B4), Color(0xFFFF1493)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ).createShader(bounds),
+          child: Text(
+            'Кондитер Про',
+            style: const TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+              color: Colors.white,
+              fontFamily: 'Lobster',
+            ),
+          ),
+        ),
         centerTitle: true,
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         elevation: 8,
-        shadowColor: Colors.black45,
+        shadowColor: Colors.pinkAccent.withOpacity(0.5),
       ),
       body: screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
