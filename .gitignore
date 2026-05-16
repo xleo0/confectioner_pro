@@ -4,54 +4,33 @@
 .build/
 .dependencies/
 
-# Generated code
-lib/*.g.dart
-lib/**/*.g.dart
-
-# Logs
-*.log
-
 # Environment
 .env
 .env.local
 *.env.*
 
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.idea/
-.vscode/
+# Logs and temp files
+*.log
+*.tmp
 *.swp
-*.swo
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
 
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Build outputs
+build/
+dist/
+target/
 ```
