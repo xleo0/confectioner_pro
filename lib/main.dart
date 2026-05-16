@@ -892,31 +892,22 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
           title: Text('Кондитер Про',
               style: TextStyle(
-                fontFamily: 'Pacifico', // Декоративный шрифт (убедитесь, что он добавлен в pubspec.yaml)
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
                 shadows: [
                   Shadow(
-                    blurRadius: 3.0,
+                    blurRadius: 4.0,
                     color: Colors.black26,
                     offset: Offset(2.0, 2.0),
                   ),
                 ],
-              ),
-          ),
+              )),
           centerTitle: true,
-          flexibleSpace: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.pinkAccent, Colors.deepPurpleAccent],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          elevation: 8,
+          shadowColor: Colors.black45
       ),
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary),
       body: screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,

@@ -2,35 +2,37 @@
 # Dependencies
 .dart_tool/
 .build/
-.dependencies/
-
-# Environment
-.env
-.env.local
-*.env.*
+dependencies/
 
 # Logs and temp files
 *.log
 *.tmp
 *.swp
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
+# Environment
+.env
+.env.local
+*.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
+*.iml
+*.ipr
+*.iws
 
 # OS generated files
 .DS_Store
 Thumbs.db
 
-# Build outputs
-build/
-dist/
-target/
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Distribution / packaging
+*.tar.gz
+*.zip
+*.tar
+*.gz
 ```
