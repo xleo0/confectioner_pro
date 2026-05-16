@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'dart:collection';
 import 'dart:math';
+import 'dart:ui' as ui;
 import 'package:table_calendar/table_calendar.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -890,21 +892,18 @@ class _MainScreenState extends State<MainScreen> {
     ];
     return Scaffold(
       appBar: AppBar(
-        title: ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [Color(0xFFFF69B4), Color(0xFFFF1493)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ).createShader(bounds),
-          child: Text(
-            'Кондитер Про',
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-              color: Colors.white,
-              fontFamily: 'Lobster',
-            ),
+        title: Text(
+          'Кондитер Про',
+          style: GoogleFonts.pacifico(
+            fontSize: 32,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 1.5,
+            foreground: Paint()
+              ..shader = ui.Gradient.linear(
+                const Offset(0, 0),
+                const Offset(200, 70),
+                [const Color(0xFFFF69B4), const Color(0xFFFF1493)],
+              ),
           ),
         ),
         centerTitle: true,
